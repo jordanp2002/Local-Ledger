@@ -1,6 +1,14 @@
 # Local Finance MCP
 
-A local-first budgeting MCP server. The current foundation runs over stdio and does not expose finance tools yet.
+A local-first budgeting MCP server. The current foundation runs over stdio and does not expose finance tools. 
+
+Inspiration:
+
+After working to create a similar system/solution across my local file storage system or a "AI Second Brain" some would call it, I realized this could be useful to set up as an mcp server as my implementation at the time was basically:
+
+Skills with defined queries -> Write to local SQLite DB -> Read from local SQLite DB
+
+While this works and is still effective for my needs, I thought an MCP would be a great way to build sharable way of doing this so others could potential have the same capabilities. Not to say my solution couldn't be done in one prompt by any frontier model but this solution creates an easy way to just setup the functionality without wasting your usage. It is also kind of just for my learning too and familiarizing myself with MCP and supplementing my Go skill development. 
 
 ## Build
 
