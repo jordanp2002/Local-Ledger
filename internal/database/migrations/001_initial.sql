@@ -17,6 +17,10 @@ CREATE TABLE budgets (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE RESTRICT,
     UNIQUE (category_id, month),
+    CHECK (
+        month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'
+        AND substr(month, 6, 2) BETWEEN '01' AND '12'
+    ),
     CHECK (typeof(amount_hundredths) = 'integer' AND amount_hundredths >= 0)
 );
 
@@ -33,6 +37,10 @@ CREATE TABLE transactions (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE RESTRICT,
     CHECK (length(merchant) > 0 AND merchant = trim(merchant)),
+    CHECK (
+        date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+        AND date(date) IS date
+    ),
     CHECK (typeof(amount_hundredths) = 'integer' AND amount_hundredths > 0)
 );
 

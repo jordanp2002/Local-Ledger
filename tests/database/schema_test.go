@@ -176,6 +176,25 @@ func TestSchemaRejectsNormalizedDuplicates(t *testing.T) {
 	expectExecError(t, ctx, db, "INSERT INTO budgets (category_id, month, amount_hundredths) VALUES (?, ?, ?)", categoryID, "2026-08", 75000)
 }
 
+func TestSchemaRejectsNonCanonicalCalendarKeys(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openSchemaDatabase(t)
+	categoryID := insertCategory(t, ctx, db, "Groceries")
+
+	for _, month := range []string{"2026-8", "2026/08", "2026-00", "2026-13"} {
+		expectExecError(t, ctx, db, "INSERT INTO budgets (category_id, month, amount_hundredths) VALUES (?, ?, ?)", categoryID, month, 50000)
+	}
+
+	insertBudget(t, ctx, db, categoryID, "2026-08", 50000)
+	expectExecError(t, ctx, db, "INSERT INTO budgets (category_id, month, amount_hundredths) VALUES (?, ?, ?)", categoryID, "2026-8", 75000)
+
+	for _, date := range []string{"08/14/2026", "2026-8-14", "2026-02-29", "2026-04-31", "2026-00-01", "2026-01-00"} {
+		expectExecError(t, ctx, db, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, ?, ?, ?)", "Metro", 100, date, categoryID)
+	}
+
+	insertTransaction(t, ctx, db, "Leap Day", 100, "2024-02-29", categoryID)
+}
+
 func TestSchemaRejectsInvalidCategoryReferences(t *testing.T) {
 	ctx := context.Background()
 	db, _ := openSchemaDatabase(t)
