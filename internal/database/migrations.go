@@ -12,6 +12,7 @@ import (
 	"strconv"
 )
 
+//go:embed migrations/*.sql
 var embeddedMigrationFiles embed.FS
 
 var migrationFilenamePattern = regexp.MustCompile(`^([0-9]{3})_([A-Za-z0-9][A-Za-z0-9._-]*)\.sql$`)
