@@ -35,3 +35,10 @@ func TestNormalizeNameTrimsASCIIWhitespaceOnly(t *testing.T) {
 		t.Fatalf("NormalizeName(internal space) = %q, want Foo Bar", got)
 	}
 }
+
+func TestNormalizeNamePreservesUnicodeWhitespace(t *testing.T) {
+	const nbsp = "\u00a0"
+	if got := category.NormalizeName(nbsp); got != nbsp {
+		t.Fatalf("NormalizeName(NBSP) = %q, want NBSP preserved", got)
+	}
+}

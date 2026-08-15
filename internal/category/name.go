@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jordanp2002/local-finance-mcp/internal/contract"
 )
 
 var (
@@ -13,11 +15,9 @@ var (
 	ErrNotFound        = errors.New("category not found")
 )
 
-const asciiWhitespace = " \t\n\r\v\f"
-
 // NormalizeName trims only ASCII whitespace. Unicode spaces remain part of the name.
 func NormalizeName(name string) string {
-	return strings.Trim(name, asciiWhitespace)
+	return contract.TrimASCIIWhitespace(name)
 }
 
 func validateName(name string) (string, error) {

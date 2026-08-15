@@ -59,6 +59,16 @@ func TestStdioLifecycle(t *testing.T) {
 	if created.IsError {
 		t.Fatalf("create_category IsError = true, want success: %#v", created)
 	}
+	set, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "set_known_merchant",
+		Arguments: map[string]any{"merchant": "Metro", "category": "Groceries"},
+	})
+	if err != nil {
+		t.Fatalf("set_known_merchant: %v", err)
+	}
+	if set.IsError {
+		t.Fatalf("set_known_merchant IsError = true, want success: %#v", set)
+	}
 
 	closeAndWaitSession(t, session)
 	sessionClosed = true
@@ -89,6 +99,20 @@ func TestStdioLifecycle(t *testing.T) {
 	}
 	if name != "Groceries" || active != 1 {
 		t.Fatalf("persisted category = (%q, %d), want (\"Groceries\", 1)", name, active)
+	}
+
+	var merchantName string
+	var categoryID int64
+	if err := db.QueryRowContext(ctx, `
+		SELECT m.merchant, m.category_id
+		FROM known_merchants AS m
+		INNER JOIN categories AS c ON c.id = m.category_id
+		WHERE m.merchant = ? COLLATE NOCASE
+	`, "metro").Scan(&merchantName, &categoryID); err != nil {
+		t.Fatalf("select persisted Metro mapping: %v", err)
+	}
+	if merchantName != "Metro" || categoryID == 0 {
+		t.Fatalf("persisted merchant mapping = (%q, %d), want (\"Metro\", nonzero)", merchantName, categoryID)
 	}
 }
 
