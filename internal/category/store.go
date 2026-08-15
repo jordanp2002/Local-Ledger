@@ -1,3 +1,4 @@
+// Package category implements create, list, and disable for spending categories.
 package category
 
 import (
@@ -10,8 +11,21 @@ import (
 )
 
 type Store struct {
-	DB  *sql.DB
-	Now func() time.Time // current local month only; nil means time.Now
+	DB *sql.DB
+	// Now supplies the current local time for month derivation. nil uses time.Now.
+	Now func() time.Time
+}
+
+// LocalMonth formats YYYY-MM in t's location without converting to UTC first.
+func LocalMonth(t time.Time) string {
+	return t.Format("2006-01")
+}
+
+func (s *Store) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 type queryer interface {

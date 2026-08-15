@@ -6,7 +6,7 @@ A local-first budgeting MCP server. It runs over stdio and exposes three categor
 - `list_categories`
 - `disable_category`
 
-These tools create, list, disable, and re-enable spending categories. Re-enable a disabled category by calling `create_category` again. 
+These tools create, list, disable, and re-enable spending categories. Re-enable a disabled category by calling `create_category` again.
 
 Inspiration:
 

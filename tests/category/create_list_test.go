@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/category"
@@ -218,5 +220,5 @@ func nameLabel(name string) string {
 	if name == "" {
 		return "empty"
 	}
-	return name
+	return strings.ReplaceAll(strconv.Quote(name), `"`, "")
 }
