@@ -45,8 +45,19 @@ func TestStdioLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(result.Tools) != 0 {
-		t.Fatalf("got %d tools, want 0", len(result.Tools))
+	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
+		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
+	}
+
+	created, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "create_category",
+		Arguments: map[string]any{"name": "Groceries"},
+	})
+	if err != nil {
+		t.Fatalf("create_category: %v", err)
+	}
+	if created.IsError {
+		t.Fatalf("create_category IsError = true, want success: %#v", created)
 	}
 
 	closeAndWaitSession(t, session)
@@ -69,6 +80,15 @@ func TestStdioLifecycle(t *testing.T) {
 	}
 	if version != 1 {
 		t.Fatalf("migration version = %d, want 1", version)
+	}
+
+	var name string
+	var active int
+	if err := db.QueryRowContext(ctx, "SELECT name, active FROM categories WHERE name = ?", "Groceries").Scan(&name, &active); err != nil {
+		t.Fatalf("select persisted Groceries category: %v", err)
+	}
+	if name != "Groceries" || active != 1 {
+		t.Fatalf("persisted category = (%q, %d), want (\"Groceries\", 1)", name, active)
 	}
 }
 
