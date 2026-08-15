@@ -30,6 +30,11 @@ func TestDisableMissingName(t *testing.T) {
 	if !errors.Is(err, category.ErrInvalidName) {
 		t.Fatalf("Disable(whitespace) error = %v, want ErrInvalidName", err)
 	}
+
+	_, _, _, err = store.Disable(ctx, "Groceries\x00")
+	if !errors.Is(err, category.ErrNameContainsNUL) {
+		t.Fatalf("Disable(NUL) error = %v, want ErrNameContainsNUL", err)
+	}
 }
 
 func TestDisableFirstThenIdempotent(t *testing.T) {

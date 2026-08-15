@@ -121,10 +121,25 @@ func TestCreateCategoryAlreadyExists(t *testing.T) {
 
 func TestCategoryNameInvalidInput(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
-	want := invalidNameEnvelope()
+	want := invalidNameEnvelope("must not be empty")
 
 	for _, tool := range []string{"create_category", "disable_category"} {
 		for _, name := range []string{"", "   ", "\t\n\r\v\f"} {
+			result := callTool(t, session, tool, map[string]any{"name": name})
+			if !result.IsError {
+				t.Fatalf("%s name %q IsError = false, want true", tool, name)
+			}
+			requireStructuredEqual(t, result, want)
+		}
+	}
+}
+
+func TestCategoryNameRejectsNUL(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+	want := invalidNameEnvelope("must not contain NUL characters")
+
+	for _, tool := range []string{"create_category", "disable_category"} {
+		for _, name := range []string{"\x00", " \x00 ", "Food\x00Test"} {
 			result := callTool(t, session, tool, map[string]any{"name": name})
 			if !result.IsError {
 				t.Fatalf("%s name %q IsError = false, want true", tool, name)
@@ -583,14 +598,14 @@ func mustJSON(t *testing.T, value any) string {
 	return string(raw)
 }
 
-func invalidNameEnvelope() contract.ErrorEnvelope {
+func invalidNameEnvelope(reason string) contract.ErrorEnvelope {
 	return contract.NewErrorEnvelope(contract.NewError(
 		contract.ErrorCodeInvalidInput,
 		"One or more input fields are invalid.",
 		false,
 		map[string]any{
 			"fields": []map[string]string{
-				{"field": "name", "reason": "must not be empty"},
+				{"field": "name", "reason": reason},
 			},
 		},
 	))

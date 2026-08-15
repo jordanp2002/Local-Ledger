@@ -85,6 +85,28 @@ func TestCreateRejectsEmptyAndWhitespaceOnlyNames(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsNamesContainingNUL(t *testing.T) {
+	ctx := context.Background()
+	store := openStore(t)
+
+	for _, name := range []string{"\x00", " \x00 ", "Food\x00Test"} {
+		cat, created, reactivated, err := store.Create(ctx, name)
+		if !errors.Is(err, category.ErrNameContainsNUL) {
+			t.Fatalf("Create(%q) error = %v, want ErrNameContainsNUL", name, err)
+		}
+		if !errors.Is(err, category.ErrInvalidName) {
+			t.Fatalf("Create(%q) error = %v, want ErrInvalidName family", name, err)
+		}
+		if created || reactivated || cat != (contract.Category{}) {
+			t.Fatalf("Create(%q) = (%#v, %v, %v), want zero result", name, cat, created, reactivated)
+		}
+	}
+
+	if got := countRows(t, ctx, store.DB, `SELECT count(*) FROM categories`); got != 0 {
+		t.Fatalf("categories after NUL creates = %d, want 0", got)
+	}
+}
+
 func TestCreateActiveDuplicateDifferentCasing(t *testing.T) {
 	ctx := context.Background()
 	store := openStore(t)

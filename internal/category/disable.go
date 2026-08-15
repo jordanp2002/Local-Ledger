@@ -9,9 +9,9 @@ import (
 )
 
 func (s *Store) Disable(ctx context.Context, name string) (contract.Category, bool, *contract.Budget, error) {
-	normalized := NormalizeName(name)
-	if normalized == "" {
-		return contract.Category{}, false, nil, ErrInvalidName
+	normalized, err := validateName(name)
+	if err != nil {
+		return contract.Category{}, false, nil, err
 	}
 
 	existing, found, err := lookupCategory(ctx, s.DB, normalized)

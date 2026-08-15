@@ -62,7 +62,7 @@ func registerCategoryTools(srv *mcp.Server, store *category.Store, logger *log.L
 
 func (t *categoryTools) createCategory(ctx context.Context, _ *mcp.CallToolRequest, in categoryNameInput) (*mcp.CallToolResult, any, error) {
 	if category.NormalizeName(in.Name) == "" {
-		return toolError(invalidNameEnvelope())
+		return toolError(invalidNameEnvelope("must not be empty"))
 	}
 
 	cat, created, reactivated, err := t.store.Create(ctx, in.Name)
@@ -75,8 +75,10 @@ func (t *categoryTools) createCategory(ctx context.Context, _ *mcp.CallToolReque
 				false,
 				map[string]any{"category": cat},
 			)))
+		case errors.Is(err, category.ErrNameContainsNUL):
+			return toolError(invalidNameEnvelope("must not contain NUL characters"))
 		case errors.Is(err, category.ErrInvalidName):
-			return toolError(invalidNameEnvelope())
+			return toolError(invalidNameEnvelope("must not be empty"))
 		default:
 			return t.internalError("create_category", err)
 		}
@@ -104,7 +106,7 @@ func (t *categoryTools) listCategories(ctx context.Context, _ *mcp.CallToolReque
 
 func (t *categoryTools) disableCategory(ctx context.Context, _ *mcp.CallToolRequest, in categoryNameInput) (*mcp.CallToolResult, any, error) {
 	if category.NormalizeName(in.Name) == "" {
-		return toolError(invalidNameEnvelope())
+		return toolError(invalidNameEnvelope("must not be empty"))
 	}
 
 	cat, changed, removed, err := t.store.Disable(ctx, in.Name)
@@ -112,8 +114,10 @@ func (t *categoryTools) disableCategory(ctx context.Context, _ *mcp.CallToolRequ
 		switch {
 		case errors.Is(err, category.ErrNotFound):
 			return t.categoryNotFound(ctx, in.Name)
+		case errors.Is(err, category.ErrNameContainsNUL):
+			return toolError(invalidNameEnvelope("must not contain NUL characters"))
 		case errors.Is(err, category.ErrInvalidName):
-			return toolError(invalidNameEnvelope())
+			return toolError(invalidNameEnvelope("must not be empty"))
 		default:
 			return t.internalError("disable_category", err)
 		}
@@ -158,14 +162,14 @@ func toolError(envelope contract.ErrorEnvelope) (*mcp.CallToolResult, any, error
 	return &mcp.CallToolResult{IsError: true}, envelope, nil
 }
 
-func invalidNameEnvelope() contract.ErrorEnvelope {
+func invalidNameEnvelope(reason string) contract.ErrorEnvelope {
 	return contract.NewErrorEnvelope(contract.NewError(
 		contract.ErrorCodeInvalidInput,
 		"",
 		false,
 		map[string]any{
 			"fields": []map[string]string{
-				{"field": "name", "reason": "must not be empty"},
+				{"field": "name", "reason": reason},
 			},
 		},
 	))

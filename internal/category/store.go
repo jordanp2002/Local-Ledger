@@ -36,9 +36,9 @@ type queryer interface {
 const categoryColumns = `id, name, active, created_at, updated_at`
 
 func (s *Store) Create(ctx context.Context, name string) (contract.Category, bool, bool, error) {
-	normalized := NormalizeName(name)
-	if normalized == "" {
-		return contract.Category{}, false, false, ErrInvalidName
+	normalized, err := validateName(name)
+	if err != nil {
+		return contract.Category{}, false, false, err
 	}
 
 	tx, err := s.DB.BeginTx(ctx, nil)
