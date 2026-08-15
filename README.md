@@ -1,6 +1,12 @@
 # Local Finance MCP
 
-A local-first budgeting MCP server. The current foundation runs over stdio and does not expose finance tools. 
+A local-first budgeting MCP server. It runs over stdio and exposes three category tools:
+
+- `create_category`
+- `list_categories`
+- `disable_category`
+
+These tools create, list, disable, and re-enable spending categories. Re-enable a disabled category by calling `create_category` again. 
 
 Inspiration:
 
