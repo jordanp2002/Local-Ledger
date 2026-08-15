@@ -2,9 +2,14 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"time"
 
+	"github.com/jordanp2002/local-finance-mcp/internal/category"
 	"github.com/jordanp2002/local-finance-mcp/internal/database"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -15,11 +20,20 @@ type Config struct {
 	DatabasePath string
 }
 
-func New() *mcp.Server {
-	return mcp.NewServer(&mcp.Implementation{
+func New(db *sql.DB, now func() time.Time, logger *log.Logger) *mcp.Server {
+	if logger == nil {
+		logger = log.New(os.Stderr, "local-finance-mcp: ", 0)
+	}
+	if now == nil {
+		now = time.Now
+	}
+
+	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "local-finance-mcp",
 		Version: version,
 	}, nil)
+	registerCategoryTools(srv, &category.Store{DB: db, Now: now}, logger)
+	return srv
 }
 
 func Run(ctx context.Context, config Config) error {
@@ -28,7 +42,8 @@ func Run(ctx context.Context, config Config) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 
-	runErr := New().Run(ctx, &mcp.StdioTransport{})
+	logger := log.New(os.Stderr, "local-finance-mcp: ", 0)
+	runErr := New(db, time.Now, logger).Run(ctx, &mcp.StdioTransport{})
 	closeErr := db.Close()
 	return joinRunAndCloseErrors(runErr, closeErr)
 }

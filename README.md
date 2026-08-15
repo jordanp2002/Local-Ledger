@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/local-ledger-logo.png" alt="Local Ledger logo" width="240">
+</p>
+
 # Local Finance MCP
 
-A local-first budgeting MCP server. The current foundation runs over stdio and does not expose finance tools. 
+A local-first budgeting MCP server.
 
 Inspiration:
 
