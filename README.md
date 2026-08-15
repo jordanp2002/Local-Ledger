@@ -25,6 +25,16 @@ go run ./cmd/local-finance-mcp
 
 The database file is your finance ledger. Back it up using your normal file-backup process; the server does not provide a backup subsystem.
 
+## Tools
+
+The server exposes five finance tools:
+
+- `create_category`
+- `list_categories`
+- `disable_category`
+- `set_known_merchant`
+- `list_known_merchants`
+
 ## Build
 
 ```sh

@@ -39,3 +39,11 @@ type KnownMerchant struct {
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
 }
+
+type Page struct {
+	Limit    int64 `json:"limit"`
+	Offset   int64 `json:"offset"`
+	Returned int64 `json:"returned"`
+	Total    int64 `json:"total"`
+	HasMore  bool  `json:"has_more"`
+}
