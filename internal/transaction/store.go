@@ -529,25 +529,32 @@ func lookupKnownMerchant(ctx context.Context, tx *sql.Tx, merchantName string) (
 	return knownMerchant, true, nil
 }
 
+const transactionColumns = `
+	t.id,
+	t.amount_hundredths,
+	t.merchant,
+	t.date,
+	t.category_id,
+	c.name,
+	t.note,
+	t.created_at,
+	t.updated_at
+`
+
 func getTransactionByID(ctx context.Context, tx *sql.Tx, id int64) (contract.Transaction, error) {
-	var recorded contract.Transaction
-	var hundredths int64
-	var note sql.NullString
-	if err := tx.QueryRowContext(ctx, `
-		SELECT
-			t.id,
-			t.amount_hundredths,
-			t.merchant,
-			t.date,
-			t.category_id,
-			c.name,
-			t.note,
-			t.created_at,
-			t.updated_at
+	return scanTransaction(tx.QueryRowContext(ctx, `
+		SELECT `+transactionColumns+`
 		FROM transactions AS t
 		INNER JOIN categories AS c ON c.id = t.category_id
 		WHERE t.id = ?
-	`, id).Scan(
+	`, id))
+}
+
+func scanTransaction(row interface{ Scan(dest ...any) error }) (contract.Transaction, error) {
+	var recorded contract.Transaction
+	var hundredths int64
+	var note sql.NullString
+	if err := row.Scan(
 		&recorded.ID,
 		&hundredths,
 		&recorded.Merchant,
