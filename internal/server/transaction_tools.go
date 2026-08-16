@@ -51,6 +51,20 @@ type removeTransactionOutput struct {
 	RemovedTransaction contract.Transaction `json:"removed_transaction"`
 }
 
+type listTransactionsInput struct {
+	StartDate *string `json:"start_date,omitempty"`
+	EndDate   *string `json:"end_date,omitempty"`
+	Category  *string `json:"category,omitempty"`
+	Limit     *int64  `json:"limit,omitempty"`
+	Offset    *int64  `json:"offset,omitempty"`
+}
+
+type listTransactionsOutput struct {
+	OK           bool                   `json:"ok"`
+	Transactions []contract.Transaction `json:"transactions"`
+	Page         contract.Page          `json:"page"`
+}
+
 type transactionTools struct {
 	store  *transaction.Store
 	logger *log.Logger
@@ -73,6 +87,11 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 		Name:        "remove_transaction",
 		Description: "Permanently remove one expense by ID and return the deleted record.",
 	}, tools.removeTransaction)
+
+	mcp.AddTool[listTransactionsInput, any](srv, &mcp.Tool{
+		Name:        "list_transactions",
+		Description: "List purchases with optional inclusive date bounds, category filter, and pagination.",
+	}, tools.listTransactions)
 }
 
 func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRequest, in addTransactionInput) (*mcp.CallToolResult, any, error) {
@@ -130,6 +149,32 @@ func (t *transactionTools) removeTransaction(ctx context.Context, _ *mcp.CallToo
 	return toolOK(removeTransactionOutput{
 		OK:                 true,
 		RemovedTransaction: removed,
+	})
+}
+
+func (t *transactionTools) listTransactions(ctx context.Context, _ *mcp.CallToolRequest, in listTransactionsInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.List(ctx, transaction.ListInput{
+		StartDate: in.StartDate,
+		EndDate:   in.EndDate,
+		Category:  in.Category,
+		Limit:     in.Limit,
+		Offset:    in.Offset,
+	})
+	if len(fields) != 0 {
+		return toolError(invalidTransactionInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapTransactionError("list_transactions", err)
+	}
+
+	transactions := result.Transactions
+	if transactions == nil {
+		transactions = []contract.Transaction{}
+	}
+	return toolOK(listTransactionsOutput{
+		OK:           true,
+		Transactions: transactions,
+		Page:         result.Page,
 	})
 }
 

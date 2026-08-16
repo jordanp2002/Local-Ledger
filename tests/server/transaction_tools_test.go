@@ -24,8 +24,8 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 10 {
-		t.Fatalf("tool count = %d, want 10", len(result.Tools))
+	if len(result.Tools) != 11 {
+		t.Fatalf("tool count = %d, want 11", len(result.Tools))
 	}
 
 	var tool *mcp.Tool
@@ -455,8 +455,8 @@ func TestUpdateRemoveTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 10 {
-		t.Fatalf("tool count = %d, want 10", len(result.Tools))
+	if len(result.Tools) != 11 {
+		t.Fatalf("tool count = %d, want 11", len(result.Tools))
 	}
 
 	updateTool := toolByName(t, result.Tools, "update_transaction")
@@ -941,8 +941,403 @@ func TestUpdateRemoveTransactionInternalError(t *testing.T) {
 	}
 }
 
+func TestListTransactionsToolDiscovery(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+
+	result, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
+		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
+	}
+	if len(result.Tools) != 11 {
+		t.Fatalf("tool count = %d, want 11", len(result.Tools))
+	}
+
+	tool := toolByName(t, result.Tools, "list_transactions")
+	schema := schemaObject(t, tool.InputSchema)
+	if schema["type"] != "object" {
+		t.Fatalf("list_transactions input schema type = %v, want object", schema["type"])
+	}
+	required, _ := schema["required"].([]any)
+	if len(required) != 0 {
+		t.Fatalf("list_transactions required = %v, want no required fields", required)
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	for _, field := range []string{"start_date", "end_date", "category"} {
+		if containsValue(required, field) {
+			t.Fatalf("list_transactions required includes optional %s: %v", field, required)
+		}
+		property, _ := properties[field].(map[string]any)
+		if property == nil || !schemaTypeContains(property["type"], "string") {
+			t.Fatalf("list_transactions %s schema = %#v, want string", field, properties[field])
+		}
+	}
+	for _, field := range []string{"limit", "offset"} {
+		if containsValue(required, field) {
+			t.Fatalf("list_transactions required includes optional %s: %v", field, required)
+		}
+		property, _ := properties[field].(map[string]any)
+		if property == nil || !schemaTypeContains(property["type"], "integer") {
+			t.Fatalf("list_transactions %s schema = %#v, want integer", field, properties[field])
+		}
+	}
+}
+
+func TestListTransactionsUnfilteredAndFilters(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), func() time.Time {
+		return time.Date(2026, time.September, 15, 12, 0, 0, 0, time.FixedZone("Toronto", -4*60*60))
+	}, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	createCategoryForMerchantTest(t, session, "Dining")
+
+	july := addTestTransaction(t, session, map[string]any{
+		"amount": "1.00", "merchant": "Jul", "category": "Groceries", "date": "2026-07-31",
+	})
+	augStart := addTestTransaction(t, session, map[string]any{
+		"amount": "2.00", "merchant": "Aug1", "category": "Groceries", "date": "2026-08-01",
+	})
+	augGroceries := addTestTransaction(t, session, map[string]any{
+		"amount": "20.50", "merchant": "Metro", "category": "Groceries", "date": "2026-08-14", "note": " weekly ",
+	})
+	augDining := addTestTransaction(t, session, map[string]any{
+		"amount": "15.00", "merchant": "Cafe", "category": "Dining", "date": "2026-08-14",
+	})
+	augEnd := addTestTransaction(t, session, map[string]any{
+		"amount": "3.00", "merchant": "Aug31", "category": "Groceries", "date": "2026-08-31",
+	})
+	september := addTestTransaction(t, session, map[string]any{
+		"amount": "4.00", "merchant": "Sep", "category": "Groceries", "date": "2026-09-01",
+	})
+
+	unfiltered := callTool(t, session, "list_transactions", map[string]any{})
+	if unfiltered.IsError {
+		t.Fatalf("unfiltered list failed: %s", structuredJSON(t, unfiltered))
+	}
+	got := structuredObject(t, unfiltered)
+	if keys := objectKeys(got); strings.Join(keys, ",") != "ok,page,transactions" {
+		t.Fatalf("list_transactions keys = %v, want [ok page transactions]", keys)
+	}
+	if got["ok"] != true {
+		t.Fatalf("ok = %v, want true", got["ok"])
+	}
+	if got["transactions"] == nil {
+		t.Fatal("transactions = null, want array")
+	}
+	page := objectField(t, got, "page")
+	if keys := objectKeys(page); strings.Join(keys, ",") != "has_more,limit,offset,returned,total" {
+		t.Fatalf("page keys = %v", keys)
+	}
+	if page["limit"] != float64(50) || page["offset"] != float64(0) || page["returned"] != float64(6) || page["total"] != float64(6) || page["has_more"] != false {
+		t.Fatalf("unfiltered page = %#v, want default 50/0 over six rows", page)
+	}
+	rows := listedTransactions(t, got)
+	if gotIDs := transactionIDs(rows); strings.Join(gotIDs, ",") != idsOf(september, augEnd, augDining, augGroceries, augStart, july) {
+		t.Fatalf("unfiltered IDs = %v, want newest-first", gotIDs)
+	}
+	metro := rows[3]
+	if metro.Amount != "20.50" || metro.Merchant != "Metro" || metro.Category != "Groceries" || derefNote(metro.Note) != "weekly" {
+		t.Fatalf("canonical Metro row = %#v, want 20.50/Metro/Groceries/weekly", metro)
+	}
+	metroRaw := asObject(t, got["transactions"].([]any)[3])
+	if keys := objectKeys(metroRaw); strings.Join(keys, ",") != "amount,category,category_id,created_at,date,id,merchant,note,updated_at" {
+		t.Fatalf("transaction keys = %v", keys)
+	}
+
+	startOnly := callTool(t, session, "list_transactions", map[string]any{"start_date": "2026-08-01"})
+	if startOnly.IsError {
+		t.Fatalf("start-only list failed: %s", structuredJSON(t, startOnly))
+	}
+	if gotIDs := transactionIDs(listedTransactions(t, structuredObject(t, startOnly))); strings.Join(gotIDs, ",") != idsOf(september, augEnd, augDining, augGroceries, augStart) {
+		t.Fatalf("start-only IDs = %v, want on-bound and later", gotIDs)
+	}
+
+	endOnly := callTool(t, session, "list_transactions", map[string]any{"end_date": "2026-08-01"})
+	if endOnly.IsError {
+		t.Fatalf("end-only list failed: %s", structuredJSON(t, endOnly))
+	}
+	if gotIDs := transactionIDs(listedTransactions(t, structuredObject(t, endOnly))); strings.Join(gotIDs, ",") != idsOf(augStart, july) {
+		t.Fatalf("end-only IDs = %v, want on-bound and earlier", gotIDs)
+	}
+
+	both := callTool(t, session, "list_transactions", map[string]any{
+		"start_date": "2026-08-01",
+		"end_date":   "2026-08-31",
+	})
+	if both.IsError {
+		t.Fatalf("both-bounds list failed: %s", structuredJSON(t, both))
+	}
+	if gotIDs := transactionIDs(listedTransactions(t, structuredObject(t, both))); strings.Join(gotIDs, ",") != idsOf(augEnd, augDining, augGroceries, augStart) {
+		t.Fatalf("August range IDs = %v, want inclusive endpoints", gotIDs)
+	}
+
+	if result := callTool(t, session, "disable_category", map[string]any{"name": "Dining"}); result.IsError {
+		t.Fatalf("disable Dining: %s", structuredJSON(t, result))
+	}
+	inactive := callTool(t, session, "list_transactions", map[string]any{"category": "dining"})
+	if inactive.IsError {
+		t.Fatalf("inactive category list failed: %s", structuredJSON(t, inactive))
+	}
+	inactiveGot := structuredObject(t, inactive)
+	if inactiveGot["ok"] != true {
+		t.Fatalf("inactive list ok = %v, want true", inactiveGot["ok"])
+	}
+	inactiveRows := listedTransactions(t, inactiveGot)
+	if len(inactiveRows) != 1 || inactiveRows[0].ID != augDining.ID || inactiveRows[0].Category != "Dining" {
+		t.Fatalf("inactive filter = %#v, want historical Dining row", inactiveRows)
+	}
+	if asObject(t, structuredObject(t, inactive)["transactions"].([]any)[0])["note"] != nil {
+		t.Fatalf("unset Dining note = %#v, want null", asObject(t, structuredObject(t, inactive)["transactions"].([]any)[0])["note"])
+	}
+}
+
+func TestListTransactionsPagination(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	createCategoryForMerchantTest(t, session, "Dining")
+	addTestTransaction(t, session, map[string]any{
+		"amount": "9.00", "merchant": "Cafe", "category": "Dining", "date": "2026-08-14",
+	})
+	first := addTestTransaction(t, session, map[string]any{
+		"amount": "1.00", "merchant": "Metro-01", "category": "Groceries", "date": "2026-08-01",
+	})
+	second := addTestTransaction(t, session, map[string]any{
+		"amount": "2.00", "merchant": "Metro-05", "category": "Groceries", "date": "2026-08-05",
+	})
+	third := addTestTransaction(t, session, map[string]any{
+		"amount": "3.00", "merchant": "Metro-10", "category": "Groceries", "date": "2026-08-10",
+	})
+
+	one := int64(1)
+	firstPage := callTool(t, session, "list_transactions", map[string]any{"category": "Groceries", "limit": one})
+	if firstPage.IsError {
+		t.Fatalf("first page failed: %s", structuredJSON(t, firstPage))
+	}
+	firstPayload := structuredObject(t, firstPage)
+	firstRows := firstPayload["transactions"].([]any)
+	firstPageObject := objectField(t, firstPayload, "page")
+	if len(firstRows) != 1 || firstPageObject["total"] != float64(3) || firstPageObject["returned"] != float64(1) || firstPageObject["has_more"] != true {
+		t.Fatalf("first page = %s, want one of three Groceries with has_more", structuredJSON(t, firstPage))
+	}
+	if decodeTransaction(t, firstRows[0]).ID != third.ID {
+		t.Fatalf("first page row = %#v, want newest Groceries", firstRows[0])
+	}
+
+	two := int64(2)
+	offset := int64(1)
+	lastPage := callTool(t, session, "list_transactions", map[string]any{"category": "Groceries", "limit": two, "offset": offset})
+	if lastPage.IsError {
+		t.Fatalf("last page failed: %s", structuredJSON(t, lastPage))
+	}
+	lastPayload := structuredObject(t, lastPage)
+	lastRows := listedTransactions(t, lastPayload)
+	lastPageObject := objectField(t, lastPayload, "page")
+	if lastPageObject["total"] != float64(3) || lastPageObject["returned"] != float64(2) || lastPageObject["has_more"] != false {
+		t.Fatalf("last page = %s, want two Groceries and no has_more", structuredJSON(t, lastPage))
+	}
+	if strings.Join(transactionIDs(lastRows), ",") != idsOf(second, first) {
+		t.Fatalf("last page IDs = %v, want remaining Groceries newest-first", transactionIDs(lastRows))
+	}
+
+	beyond := callTool(t, session, "list_transactions", map[string]any{"category": "Groceries", "offset": int64(3)})
+	if beyond.IsError {
+		t.Fatalf("beyond-end page failed: %s", structuredJSON(t, beyond))
+	}
+	beyondPayload := structuredObject(t, beyond)
+	beyondRows, ok := beyondPayload["transactions"].([]any)
+	if !ok || beyondRows == nil || len(beyondRows) != 0 {
+		t.Fatalf("beyond-end transactions = %#v, want []", beyondPayload["transactions"])
+	}
+	beyondPage := objectField(t, beyondPayload, "page")
+	if beyondPage["total"] != float64(3) || beyondPage["returned"] != float64(0) || beyondPage["has_more"] != false {
+		t.Fatalf("beyond-end page = %s, want total three and zero returned", structuredJSON(t, beyond))
+	}
+}
+
+func TestListTransactionsEmptyMatches(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+
+	emptyDB := callTool(t, session, "list_transactions", map[string]any{})
+	if emptyDB.IsError {
+		t.Fatalf("empty-database list IsError = true, want success: %s", structuredJSON(t, emptyDB))
+	}
+	emptyPayload := structuredObject(t, emptyDB)
+	if emptyPayload["ok"] != true {
+		t.Fatalf("ok = %v, want true", emptyPayload["ok"])
+	}
+	rows, ok := emptyPayload["transactions"].([]any)
+	if !ok || rows == nil || len(rows) != 0 {
+		t.Fatalf("empty transactions = %#v, want []", emptyPayload["transactions"])
+	}
+	page := objectField(t, emptyPayload, "page")
+	if page["limit"] != float64(50) || page["offset"] != float64(0) || page["returned"] != float64(0) || page["total"] != float64(0) || page["has_more"] != false {
+		t.Fatalf("empty page = %#v, want zero counts", page)
+	}
+
+	createCategoryForMerchantTest(t, session, "Groceries")
+	addTestTransaction(t, session, map[string]any{
+		"amount": "20.00", "merchant": "Metro", "category": "Groceries", "date": "2026-07-31",
+	})
+	noMatch := callTool(t, session, "list_transactions", map[string]any{
+		"start_date": "2026-08-01",
+		"end_date":   "2026-08-31",
+		"category":   "Groceries",
+	})
+	if noMatch.IsError {
+		t.Fatalf("empty-filter list IsError = true, want success: %s", structuredJSON(t, noMatch))
+	}
+	noMatchPayload := structuredObject(t, noMatch)
+	noMatchRows, ok := noMatchPayload["transactions"].([]any)
+	if !ok || noMatchRows == nil || len(noMatchRows) != 0 {
+		t.Fatalf("filtered empty transactions = %#v, want []", noMatchPayload["transactions"])
+	}
+	noMatchPage := objectField(t, noMatchPayload, "page")
+	if noMatchPage["returned"] != float64(0) || noMatchPage["total"] != float64(0) || noMatchPage["has_more"] != false {
+		t.Fatalf("filtered empty page = %#v, want zero counts", noMatchPage)
+	}
+}
+
+func TestListTransactionsInvalidInput(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+
+	t.Run("reversed dates", func(t *testing.T) {
+		result := callTool(t, session, "list_transactions", map[string]any{
+			"start_date": "2026-08-31",
+			"end_date":   "2026-08-01",
+		})
+		if !result.IsError {
+			t.Fatal("reversed dates IsError = false, want true")
+		}
+		requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeInvalidInput,
+			"",
+			false,
+			map[string]any{
+				"fields": []contract.FieldIssue{
+					{Field: "end_date", Reason: "must be on or after start_date"},
+				},
+			},
+		)))
+	})
+
+	t.Run("malformed dates", func(t *testing.T) {
+		result := callTool(t, session, "list_transactions", map[string]any{
+			"start_date": " 2026-08-01",
+			"end_date":   "2026-8-31",
+		})
+		if !result.IsError {
+			t.Fatal("malformed dates IsError = false, want true")
+		}
+		requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeInvalidInput,
+			"",
+			false,
+			map[string]any{
+				"fields": []contract.FieldIssue{
+					{Field: "start_date", Reason: "must be a valid YYYY-MM-DD date"},
+					{Field: "end_date", Reason: "must be a valid YYYY-MM-DD date"},
+				},
+			},
+		)))
+	})
+
+	t.Run("pagination", func(t *testing.T) {
+		result := callTool(t, session, "list_transactions", map[string]any{
+			"limit":  int64(0),
+			"offset": int64(-1),
+		})
+		if !result.IsError {
+			t.Fatal("invalid pagination IsError = false, want true")
+		}
+		requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeInvalidInput,
+			"",
+			false,
+			map[string]any{
+				"fields": []contract.FieldIssue{
+					{Field: "limit", Reason: "must be between 1 and 200"},
+					{Field: "offset", Reason: "must be zero or greater"},
+				},
+			},
+		)))
+	})
+}
+
+func TestListTransactionsCategoryNotFound(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+	groceries := createCategoryForMerchantTest(t, session, "Groceries")
+
+	result := callTool(t, session, "list_transactions", map[string]any{"category": "  Pharmacy  "})
+	if !result.IsError {
+		t.Fatal("category_not_found IsError = false, want true")
+	}
+	requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeCategoryNotFound,
+		"Category 'Pharmacy' does not exist.",
+		false,
+		map[string]any{
+			"requested_category": "Pharmacy",
+			"categories":         []contract.Category{groceries},
+		},
+	)))
+}
+
+func TestListTransactionsInternalError(t *testing.T) {
+	db := openCategoryDB(t)
+	var logs bytes.Buffer
+	session := connectCategorySession(t, db, fixedTransactionNow, log.New(&logs, "", 0))
+	if err := db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+
+	result := callTool(t, session, "list_transactions", map[string]any{})
+	if !result.IsError {
+		t.Fatal("internal list_transactions IsError = false, want true")
+	}
+	requireStructuredEqual(t, result, contract.NewInternalErrorEnvelope())
+	if leakedInternalError(structuredJSON(t, result)) || leakedInternalError(toolText(result)) {
+		t.Fatalf("public payload leaked internal details: %s", structuredJSON(t, result))
+	}
+	if logs.Len() == 0 {
+		t.Fatal("logger did not record the private cause")
+	}
+	if !strings.Contains(logs.String(), "sql:") && !strings.Contains(logs.String(), "database is closed") {
+		t.Fatalf("logger = %q, want private database cause", logs.String())
+	}
+}
+
 func fixedTransactionNow() time.Time {
 	return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.FixedZone("Toronto", -4*60*60))
+}
+
+func listedTransactions(t *testing.T, payload map[string]any) []contract.Transaction {
+	t.Helper()
+	raw, ok := payload["transactions"].([]any)
+	if !ok || raw == nil {
+		t.Fatalf("transactions = %#v, want array", payload["transactions"])
+	}
+	rows := make([]contract.Transaction, len(raw))
+	for i, value := range raw {
+		rows[i] = decodeTransaction(t, value)
+	}
+	return rows
+}
+
+func transactionIDs(rows []contract.Transaction) []string {
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = strconv.FormatInt(row.ID, 10)
+	}
+	return ids
+}
+
+func idsOf(rows ...contract.Transaction) string {
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = strconv.FormatInt(row.ID, 10)
+	}
+	return strings.Join(ids, ",")
 }
 
 func addTestTransaction(t *testing.T, session *mcp.ClientSession, args map[string]any) contract.Transaction {

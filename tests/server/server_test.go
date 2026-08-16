@@ -164,6 +164,39 @@ func TestStdioLifecycle(t *testing.T) {
 		t.Fatalf("remove_transaction IsError = true, want success: %#v", removed)
 	}
 
+	listed, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "list_transactions",
+		Arguments: map[string]any{
+			"start_date": "2026-08-01",
+			"end_date":   "2026-08-31",
+			"category":   "Groceries",
+		},
+	})
+	if err != nil {
+		t.Fatalf("list_transactions: %v", err)
+	}
+	if listed.IsError {
+		t.Fatalf("list_transactions IsError = true, want success: %#v", listed)
+	}
+	listedPayload := structuredObject(t, listed)
+	if keys := objectKeys(listedPayload); strings.Join(keys, ",") != "ok,page,transactions" {
+		t.Fatalf("list_transactions keys = %v, want [ok page transactions]", keys)
+	}
+	if listedPayload["ok"] != true {
+		t.Fatalf("list_transactions ok = %v, want true", listedPayload["ok"])
+	}
+	listedRows, ok := listedPayload["transactions"].([]any)
+	if !ok || len(listedRows) != 1 {
+		t.Fatalf("list_transactions transactions = %#v, want the remaining No Frills purchase", listedPayload["transactions"])
+	}
+	listedTxn := decodeTransaction(t, listedRows[0])
+	if listedTxn.ID != first.ID || listedTxn.Merchant != "No Frills" || listedTxn.Amount != "23.50" || listedTxn.Date != "2026-08-14" || listedTxn.Category != "Groceries" {
+		t.Fatalf("listed transaction = %#v, want updated No Frills 23.50", listedTxn)
+	}
+	if listedTxn.Note != nil || asObject(t, listedRows[0])["note"] != nil {
+		t.Fatalf("listed note = %#v, want null", listedTxn.Note)
+	}
+
 	closeAndWaitSession(t, session)
 	sessionClosed = true
 	if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
