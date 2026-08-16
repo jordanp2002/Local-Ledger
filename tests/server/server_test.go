@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"os/exec"
@@ -103,6 +104,7 @@ func TestStdioLifecycle(t *testing.T) {
 			"merchant": "No Frills",
 			"category": "Groceries",
 			"date":     "2026-08-14",
+			"note":     "weekly groceries",
 		},
 	})
 	if err != nil {
@@ -110,6 +112,56 @@ func TestStdioLifecycle(t *testing.T) {
 	}
 	if added.IsError {
 		t.Fatalf("add_transaction IsError = true, want success: %#v", added)
+	}
+	first := decodeTransaction(t, structuredObject(t, added)["transaction"])
+	if first.ID == 0 {
+		t.Fatal("added No Frills transaction id = 0")
+	}
+
+	updated, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "update_transaction",
+		Arguments: map[string]any{
+			"id":     first.ID,
+			"amount": "23.50",
+			"note":   nil,
+		},
+	})
+	if err != nil {
+		t.Fatalf("update_transaction: %v", err)
+	}
+	if updated.IsError {
+		t.Fatalf("update_transaction IsError = true, want success: %#v", updated)
+	}
+
+	secondAdded, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "add_transaction",
+		Arguments: map[string]any{
+			"amount":   "15.00",
+			"merchant": "Metro",
+			"category": "Groceries",
+			"date":     "2026-08-14",
+		},
+	})
+	if err != nil {
+		t.Fatalf("add_transaction second: %v", err)
+	}
+	if secondAdded.IsError {
+		t.Fatalf("add_transaction second IsError = true, want success: %#v", secondAdded)
+	}
+	second := decodeTransaction(t, structuredObject(t, secondAdded)["transaction"])
+	if second.ID == 0 || second.ID == first.ID {
+		t.Fatalf("second transaction id = %d, want a new id", second.ID)
+	}
+
+	removed, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "remove_transaction",
+		Arguments: map[string]any{"id": second.ID},
+	})
+	if err != nil {
+		t.Fatalf("remove_transaction: %v", err)
+	}
+	if removed.IsError {
+		t.Fatalf("remove_transaction IsError = true, want success: %#v", removed)
 	}
 
 	closeAndWaitSession(t, session)
@@ -173,16 +225,35 @@ func TestStdioLifecycle(t *testing.T) {
 
 	var transactionMerchant, transactionDate, transactionCategory string
 	var transactionAmount int64
+	var transactionNote sql.NullString
 	if err := db.QueryRowContext(ctx, `
-		SELECT t.merchant, t.amount_hundredths, t.date, c.name
+		SELECT t.merchant, t.amount_hundredths, t.date, t.note, c.name
 		FROM transactions AS t
 		INNER JOIN categories AS c ON c.id = t.category_id
-		WHERE t.merchant = ? COLLATE NOCASE
-	`, "No Frills").Scan(&transactionMerchant, &transactionAmount, &transactionDate, &transactionCategory); err != nil {
+		WHERE t.id = ?
+	`, first.ID).Scan(&transactionMerchant, &transactionAmount, &transactionDate, &transactionNote, &transactionCategory); err != nil {
 		t.Fatalf("select persisted No Frills transaction: %v", err)
 	}
-	if transactionMerchant != "No Frills" || transactionAmount != 2000 || transactionDate != "2026-08-14" || transactionCategory != "Groceries" {
-		t.Fatalf("persisted transaction = (%q, %d, %q, %q), want (\"No Frills\", 2000, \"2026-08-14\", \"Groceries\")", transactionMerchant, transactionAmount, transactionDate, transactionCategory)
+	if transactionMerchant != "No Frills" || transactionAmount != 2350 || transactionDate != "2026-08-14" || transactionCategory != "Groceries" {
+		t.Fatalf("persisted transaction = (%q, %d, %q, %q), want (\"No Frills\", 2350, \"2026-08-14\", \"Groceries\")", transactionMerchant, transactionAmount, transactionDate, transactionCategory)
+	}
+	if transactionNote.Valid {
+		t.Fatalf("persisted note = %q, want NULL after update_transaction note:null", transactionNote.String)
+	}
+
+	var remaining int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM transactions`).Scan(&remaining); err != nil {
+		t.Fatalf("count persisted transactions: %v", err)
+	}
+	if remaining != 1 {
+		t.Fatalf("persisted transaction count = %d, want 1", remaining)
+	}
+	var removedCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM transactions WHERE id = ?`, second.ID).Scan(&removedCount); err != nil {
+		t.Fatalf("count removed transaction: %v", err)
+	}
+	if removedCount != 0 {
+		t.Fatalf("removed transaction %d is still present", second.ID)
 	}
 
 	var createdMerchant, createdCategory string

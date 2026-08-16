@@ -1,4 +1,4 @@
-// Package transaction implements add-transaction domain rules.
+// Package transaction implements transaction domain rules.
 package transaction
 
 import (
@@ -17,6 +17,7 @@ var (
 	ErrCategoryInactive         = errors.New("category inactive")
 	ErrMerchantCategoryRequired = errors.New("merchant category required")
 	ErrMerchantCategoryInactive = errors.New("merchant category inactive")
+	ErrTransactionNotFound      = errors.New("transaction not found")
 )
 
 const (
@@ -43,6 +44,36 @@ type AddResult struct {
 	Transaction           contract.Transaction
 	CategorySource        string
 	MerchantMappingAction string
+}
+
+// NotePatch is the three-state note field for Update.
+// The zero value (Present=false) leaves the stored note unchanged.
+// Present with a nil Value clears the note to SQL NULL.
+type NotePatch struct {
+	Present bool
+	Value   *string // Present+nil = clear note
+}
+
+// UpdateInput is one update_transaction request at the store boundary.
+// Nil pointers are omitted fields. Explicit JSON null on a non-nullable
+// patch field is signaled by the matching *Null flag so validation can
+// collect every semantic issue in field order.
+type UpdateInput struct {
+	ID           int64
+	Amount       *string
+	AmountNull   bool
+	Merchant     *string
+	MerchantNull bool
+	Category     *string
+	CategoryNull bool
+	Date         *string
+	DateNull     bool
+	Note         NotePatch
+}
+
+// UpdateResult is the canonical joined transaction after a patch.
+type UpdateResult struct {
+	Transaction contract.Transaction
 }
 
 // Store owns transaction validation and persistence.
@@ -119,6 +150,22 @@ func (e *MerchantCategoryInactiveError) Is(target error) bool {
 	return target == ErrMerchantCategoryInactive
 }
 
+// TransactionNotFoundError identifies a missing transaction ID.
+type TransactionNotFoundError struct {
+	ID int64
+}
+
+func (e *TransactionNotFoundError) Error() string {
+	if e == nil {
+		return ErrTransactionNotFound.Error()
+	}
+	return fmt.Sprintf("transaction %d was not found", e.ID)
+}
+
+func (e *TransactionNotFoundError) Is(target error) bool {
+	return target == ErrTransactionNotFound
+}
+
 type validatedAdd struct {
 	amountHundredths int64
 	merchant         string
@@ -153,88 +200,130 @@ func validateAdd(in AddInput, now time.Time) (validatedAdd, []contract.FieldIssu
 	fields := make([]contract.FieldIssue, 0)
 	validated := validatedAdd{}
 
-	amount, amountErr := contract.ParseAmount(in.Amount)
-	if amountErr != nil {
-		fields = append(fields, contract.FieldIssue{
-			Field:  "amount",
-			Reason: "must be a positive amount with at most two decimal places",
-		})
-	} else if amount == 0 {
-		fields = append(fields, contract.FieldIssue{
-			Field:  "amount",
-			Reason: "must be greater than zero",
-		})
+	if amount, issue := validateAmount(in.Amount); issue != nil {
+		fields = append(fields, *issue)
 	} else {
 		validated.amountHundredths = amount
 	}
 
-	merchant := contract.TrimASCIIWhitespace(in.Merchant)
-	switch {
-	case merchant == "":
-		fields = append(fields, contract.FieldIssue{
-			Field:  "merchant",
-			Reason: "must not be empty",
-		})
-	case strings.ContainsRune(merchant, '\x00'):
-		fields = append(fields, contract.FieldIssue{
-			Field:  "merchant",
-			Reason: "must not contain NUL characters",
-		})
-	default:
+	if merchant, issue := validateMerchant(in.Merchant); issue != nil {
+		fields = append(fields, *issue)
+	} else {
 		validated.merchant = merchant
 	}
 
 	if in.Category != nil {
-		category := contract.TrimASCIIWhitespace(*in.Category)
-		switch {
-		case category == "":
-			fields = append(fields, contract.FieldIssue{
-				Field:  "category",
-				Reason: "must not be empty",
-			})
-		case strings.ContainsRune(category, '\x00'):
-			fields = append(fields, contract.FieldIssue{
-				Field:  "category",
-				Reason: "must not contain NUL characters",
-			})
-		default:
+		if category, issue := validateCategoryName(*in.Category); issue != nil {
+			fields = append(fields, *issue)
+		} else {
 			validated.category = &category
 		}
 	}
 
 	today := LocalDate(now)
 	if in.Date != nil {
-		parsed, dateErr := contract.ParseDate(*in.Date)
-		if dateErr != nil {
-			fields = append(fields, contract.FieldIssue{
-				Field:  "date",
-				Reason: "must be a valid YYYY-MM-DD date",
-			})
-		} else if parsed > today {
-			fields = append(fields, contract.FieldIssue{
-				Field:  "date",
-				Reason: "must not be in the future",
-			})
+		if date, issue := validateDate(*in.Date, today); issue != nil {
+			fields = append(fields, *issue)
 		} else {
-			validated.date = parsed
+			validated.date = date
 		}
 	} else {
 		validated.date = today
 	}
 
 	if in.Note != nil {
-		note := contract.TrimASCIIWhitespace(*in.Note)
-		if strings.ContainsRune(note, '\x00') {
-			fields = append(fields, contract.FieldIssue{
-				Field:  "note",
-				Reason: "must not contain NUL characters",
-			})
-		} else if note != "" {
-			validated.note = sql.NullString{String: note, Valid: true}
+		if note, issue := validateNote(*in.Note); issue != nil {
+			fields = append(fields, *issue)
+		} else {
+			validated.note = note
 		}
 	}
 
 	return validated, fields
+}
+
+func validateAmount(value string) (int64, *contract.FieldIssue) {
+	amount, err := contract.ParseAmount(value)
+	if err != nil {
+		return 0, &contract.FieldIssue{
+			Field:  "amount",
+			Reason: "must be a positive amount with at most two decimal places",
+		}
+	}
+	if amount == 0 {
+		return 0, &contract.FieldIssue{
+			Field:  "amount",
+			Reason: "must be greater than zero",
+		}
+	}
+	return amount, nil
+}
+
+func validateMerchant(value string) (string, *contract.FieldIssue) {
+	merchant := contract.TrimASCIIWhitespace(value)
+	switch {
+	case merchant == "":
+		return "", &contract.FieldIssue{
+			Field:  "merchant",
+			Reason: "must not be empty",
+		}
+	case strings.ContainsRune(merchant, '\x00'):
+		return "", &contract.FieldIssue{
+			Field:  "merchant",
+			Reason: "must not contain NUL characters",
+		}
+	default:
+		return merchant, nil
+	}
+}
+
+func validateCategoryName(value string) (string, *contract.FieldIssue) {
+	category := contract.TrimASCIIWhitespace(value)
+	switch {
+	case category == "":
+		return "", &contract.FieldIssue{
+			Field:  "category",
+			Reason: "must not be empty",
+		}
+	case strings.ContainsRune(category, '\x00'):
+		return "", &contract.FieldIssue{
+			Field:  "category",
+			Reason: "must not contain NUL characters",
+		}
+	default:
+		return category, nil
+	}
+}
+
+func validateDate(value, today string) (string, *contract.FieldIssue) {
+	parsed, err := contract.ParseDate(value)
+	if err != nil {
+		return "", &contract.FieldIssue{
+			Field:  "date",
+			Reason: "must be a valid YYYY-MM-DD date",
+		}
+	}
+	if parsed > today {
+		return "", &contract.FieldIssue{
+			Field:  "date",
+			Reason: "must not be in the future",
+		}
+	}
+	return parsed, nil
+}
+
+func validateNote(value string) (sql.NullString, *contract.FieldIssue) {
+	note := contract.TrimASCIIWhitespace(value)
+	if strings.ContainsRune(note, '\x00') {
+		return sql.NullString{}, &contract.FieldIssue{
+			Field:  "note",
+			Reason: "must not contain NUL characters",
+		}
+	}
+	if note == "" {
+		return sql.NullString{}, nil
+	}
+	return sql.NullString{String: note, Valid: true}, nil
 }
 
 func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract.FieldIssue, error) {
