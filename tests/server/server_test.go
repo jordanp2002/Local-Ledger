@@ -69,6 +69,20 @@ func TestStdioLifecycle(t *testing.T) {
 	if set.IsError {
 		t.Fatalf("set_known_merchant IsError = true, want success: %#v", set)
 	}
+	month := time.Now().Format("2006-01")
+	budgetResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "create_monthly_budget",
+		Arguments: map[string]any{
+			"month":   month,
+			"budgets": []map[string]any{{"category": "Groceries", "amount": "500.00"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create_monthly_budget: %v", err)
+	}
+	if budgetResult.IsError {
+		t.Fatalf("create_monthly_budget IsError = true, want success: %#v", budgetResult)
+	}
 
 	closeAndWaitSession(t, session)
 	sessionClosed = true
@@ -113,6 +127,20 @@ func TestStdioLifecycle(t *testing.T) {
 	}
 	if merchantName != "Metro" || categoryID == 0 {
 		t.Fatalf("persisted merchant mapping = (%q, %d), want (\"Metro\", nonzero)", merchantName, categoryID)
+	}
+
+	var budgetMonth string
+	var amount int64
+	if err := db.QueryRowContext(ctx, `
+		SELECT b.month, b.amount_hundredths
+		FROM budgets AS b
+		INNER JOIN categories AS c ON c.id = b.category_id
+		WHERE c.name = ? COLLATE NOCASE
+	`, "groceries").Scan(&budgetMonth, &amount); err != nil {
+		t.Fatalf("select persisted Groceries budget: %v", err)
+	}
+	if budgetMonth != month || amount != 50000 {
+		t.Fatalf("persisted Groceries budget = (%q, %d), want (%q, 50000)", budgetMonth, amount, month)
 	}
 }
 
