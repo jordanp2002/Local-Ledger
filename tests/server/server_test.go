@@ -83,6 +83,19 @@ func TestStdioLifecycle(t *testing.T) {
 	if budgetResult.IsError {
 		t.Fatalf("create_monthly_budget IsError = true, want success: %#v", budgetResult)
 	}
+	setBudgets, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "set_budgets",
+		Arguments: map[string]any{
+			"month":   month,
+			"budgets": []map[string]any{{"category": "Groceries", "amount": "300.00"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("set_budgets: %v", err)
+	}
+	if setBudgets.IsError {
+		t.Fatalf("set_budgets IsError = true, want success: %#v", setBudgets)
+	}
 
 	closeAndWaitSession(t, session)
 	sessionClosed = true
@@ -139,8 +152,8 @@ func TestStdioLifecycle(t *testing.T) {
 	`, "groceries").Scan(&budgetMonth, &amount); err != nil {
 		t.Fatalf("select persisted Groceries budget: %v", err)
 	}
-	if budgetMonth != month || amount != 50000 {
-		t.Fatalf("persisted Groceries budget = (%q, %d), want (%q, 50000)", budgetMonth, amount, month)
+	if budgetMonth != month || amount != 30000 {
+		t.Fatalf("persisted Groceries budget = (%q, %d), want (%q, 30000)", budgetMonth, amount, month)
 	}
 }
 

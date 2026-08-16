@@ -73,6 +73,68 @@ func insertBudget(t *testing.T, ctx context.Context, db *sql.DB, categoryID int6
 	}
 }
 
+func boolPtr(v bool) *bool {
+	return &v
+}
+
+type storedBudgetRow struct {
+	ID               int64
+	CategoryID       int64
+	Month            string
+	AmountHundredths int64
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+func storedBudgetByCategory(t *testing.T, rows []storedBudgetRow, categoryID int64) storedBudgetRow {
+	t.Helper()
+	for _, row := range rows {
+		if row.CategoryID == categoryID {
+			return row
+		}
+	}
+	t.Fatalf("no stored budget for category %d", categoryID)
+	return storedBudgetRow{}
+}
+
+func listStoredBudgets(t *testing.T, ctx context.Context, db *sql.DB, month string) []storedBudgetRow {
+	t.Helper()
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, category_id, month, amount_hundredths, created_at, updated_at
+		FROM budgets
+		WHERE month = ?
+		ORDER BY id ASC
+	`, month)
+	if err != nil {
+		t.Fatalf("query stored budgets for %s: %v", month, err)
+	}
+	defer rows.Close()
+
+	stored := make([]storedBudgetRow, 0)
+	for rows.Next() {
+		var row storedBudgetRow
+		if err := rows.Scan(&row.ID, &row.CategoryID, &row.Month, &row.AmountHundredths, &row.CreatedAt, &row.UpdatedAt); err != nil {
+			t.Fatalf("scan stored budget: %v", err)
+		}
+		stored = append(stored, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate stored budgets: %v", err)
+	}
+	return stored
+}
+
+func setBudgetTimestamps(t *testing.T, ctx context.Context, db *sql.DB, month, timestamp string) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `
+		UPDATE budgets
+		SET created_at = ?, updated_at = ?
+		WHERE month = ?
+	`, timestamp, timestamp, month); err != nil {
+		t.Fatalf("set budget timestamps for %s: %v", month, err)
+	}
+}
+
 func budgetAmounts(t *testing.T, ctx context.Context, db *sql.DB, month string) []int64 {
 	t.Helper()
 	rows, err := db.QueryContext(ctx, `
