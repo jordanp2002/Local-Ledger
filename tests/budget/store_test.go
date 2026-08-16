@@ -35,6 +35,9 @@ func TestCreateExplicitReturnsCanonicalOrderedSnapshot(t *testing.T) {
 	if result.Month != "2026-08" || result.TotalBudget != "501.50" {
 		t.Fatalf("CreateExplicit() result header = (%q, %q), want (2026-08, 501.50)", result.Month, result.TotalBudget)
 	}
+	if result.CreationMode != "explicit" || result.SourceMonth != nil {
+		t.Fatalf("CreateExplicit() mode = (%q, %#v), want (explicit, nil)", result.CreationMode, result.SourceMonth)
+	}
 	if result.Budgets == nil || len(result.Budgets) != 3 {
 		t.Fatalf("CreateExplicit() budgets = %#v, want three non-nil rows", result.Budgets)
 	}
