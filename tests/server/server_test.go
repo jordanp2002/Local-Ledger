@@ -96,6 +96,21 @@ func TestStdioLifecycle(t *testing.T) {
 	if setBudgets.IsError {
 		t.Fatalf("set_budgets IsError = true, want success: %#v", setBudgets)
 	}
+	added, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "add_transaction",
+		Arguments: map[string]any{
+			"amount":   "20.00",
+			"merchant": "No Frills",
+			"category": "Groceries",
+			"date":     "2026-08-14",
+		},
+	})
+	if err != nil {
+		t.Fatalf("add_transaction: %v", err)
+	}
+	if added.IsError {
+		t.Fatalf("add_transaction IsError = true, want success: %#v", added)
+	}
 
 	closeAndWaitSession(t, session)
 	sessionClosed = true
@@ -154,6 +169,33 @@ func TestStdioLifecycle(t *testing.T) {
 	}
 	if budgetMonth != month || amount != 30000 {
 		t.Fatalf("persisted Groceries budget = (%q, %d), want (%q, 30000)", budgetMonth, amount, month)
+	}
+
+	var transactionMerchant, transactionDate, transactionCategory string
+	var transactionAmount int64
+	if err := db.QueryRowContext(ctx, `
+		SELECT t.merchant, t.amount_hundredths, t.date, c.name
+		FROM transactions AS t
+		INNER JOIN categories AS c ON c.id = t.category_id
+		WHERE t.merchant = ? COLLATE NOCASE
+	`, "No Frills").Scan(&transactionMerchant, &transactionAmount, &transactionDate, &transactionCategory); err != nil {
+		t.Fatalf("select persisted No Frills transaction: %v", err)
+	}
+	if transactionMerchant != "No Frills" || transactionAmount != 2000 || transactionDate != "2026-08-14" || transactionCategory != "Groceries" {
+		t.Fatalf("persisted transaction = (%q, %d, %q, %q), want (\"No Frills\", 2000, \"2026-08-14\", \"Groceries\")", transactionMerchant, transactionAmount, transactionDate, transactionCategory)
+	}
+
+	var createdMerchant, createdCategory string
+	if err := db.QueryRowContext(ctx, `
+		SELECT m.merchant, c.name
+		FROM known_merchants AS m
+		INNER JOIN categories AS c ON c.id = m.category_id
+		WHERE m.merchant = ? COLLATE NOCASE
+	`, "No Frills").Scan(&createdMerchant, &createdCategory); err != nil {
+		t.Fatalf("select persisted No Frills mapping: %v", err)
+	}
+	if createdMerchant != "No Frills" || createdCategory != "Groceries" {
+		t.Fatalf("persisted created mapping = (%q, %q), want (\"No Frills\", \"Groceries\")", createdMerchant, createdCategory)
 	}
 }
 
