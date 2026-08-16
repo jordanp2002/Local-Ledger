@@ -21,7 +21,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var categoryToolNames = []string{"create_category", "disable_category", "list_categories", "list_known_merchants", "set_known_merchant"}
+var categoryToolNames = []string{"create_category", "create_monthly_budget", "disable_category", "list_categories", "list_known_merchants", "set_known_merchant"}
 
 func TestCategoryToolDiscovery(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
