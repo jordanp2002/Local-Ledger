@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -26,6 +28,29 @@ type addTransactionOutput struct {
 	MerchantMappingAction string               `json:"merchant_mapping_action"`
 }
 
+type updateTransactionInput struct {
+	ID       int64   `json:"id"`
+	Amount   *string `json:"amount,omitempty"`
+	Merchant *string `json:"merchant,omitempty"`
+	Category *string `json:"category,omitempty"`
+	Date     *string `json:"date,omitempty"`
+	Note     *string `json:"note,omitempty"`
+}
+
+type updateTransactionOutput struct {
+	OK          bool                 `json:"ok"`
+	Transaction contract.Transaction `json:"transaction"`
+}
+
+type removeTransactionInput struct {
+	ID int64 `json:"id"`
+}
+
+type removeTransactionOutput struct {
+	OK                 bool                 `json:"ok"`
+	RemovedTransaction contract.Transaction `json:"removed_transaction"`
+}
+
 type transactionTools struct {
 	store  *transaction.Store
 	logger *log.Logger
@@ -38,6 +63,16 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 		Name:        "add_transaction",
 		Description: "Record one expense and apply exact merchant-default mapping rules atomically.",
 	}, tools.addTransaction)
+
+	mcp.AddTool[updateTransactionInput, any](srv, &mcp.Tool{
+		Name:        "update_transaction",
+		Description: "Patch an existing expense without changing merchant defaults or budgets.",
+	}, tools.updateTransaction)
+
+	mcp.AddTool[removeTransactionInput, any](srv, &mcp.Tool{
+		Name:        "remove_transaction",
+		Description: "Permanently remove one expense by ID and return the deleted record.",
+	}, tools.removeTransaction)
 }
 
 func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRequest, in addTransactionInput) (*mcp.CallToolResult, any, error) {
@@ -63,7 +98,52 @@ func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRe
 	})
 }
 
+func (t *transactionTools) updateTransaction(ctx context.Context, req *mcp.CallToolRequest, in updateTransactionInput) (*mcp.CallToolResult, any, error) {
+	updateIn, err := updateInputFromRequest(req, in)
+	if err != nil {
+		return t.internalError("update_transaction", err)
+	}
+
+	result, fields, err := t.store.Update(ctx, updateIn)
+	if len(fields) != 0 {
+		return toolError(invalidTransactionInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapTransactionError("update_transaction", err)
+	}
+
+	return toolOK(updateTransactionOutput{
+		OK:          true,
+		Transaction: result.Transaction,
+	})
+}
+
+func (t *transactionTools) removeTransaction(ctx context.Context, _ *mcp.CallToolRequest, in removeTransactionInput) (*mcp.CallToolResult, any, error) {
+	removed, fields, err := t.store.Remove(ctx, in.ID)
+	if len(fields) != 0 {
+		return toolError(invalidTransactionInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapTransactionError("remove_transaction", err)
+	}
+
+	return toolOK(removeTransactionOutput{
+		OK:                 true,
+		RemovedTransaction: removed,
+	})
+}
+
 func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.CallToolResult, any, error) {
+	var notFound *transaction.TransactionNotFoundError
+	if errors.As(err, &notFound) {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeTransactionNotFound,
+			fmt.Sprintf("Transaction %d was not found.", notFound.ID),
+			false,
+			map[string]any{"id": notFound.ID},
+		)))
+	}
+
 	var categoryNotFound *transaction.CategoryNotFoundError
 	if errors.As(err, &categoryNotFound) {
 		return toolError(contract.NewErrorEnvelope(contract.NewError(
@@ -130,4 +210,71 @@ func (t *transactionTools) internalError(tool string, err error) (*mcp.CallToolR
 		t.logger.Printf("%s: %v", tool, err)
 	}
 	return toolError(contract.NewInternalErrorEnvelope())
+}
+
+// updateInputFromRequest maps typed MCP input plus raw argument presence.
+// encoding/json collapses omitted and JSON null into a nil *string, so
+// explicit null on amount/merchant/category/date is passed through as a
+// *Null flag for store validation.
+func updateInputFromRequest(req *mcp.CallToolRequest, in updateTransactionInput) (transaction.UpdateInput, error) {
+	args, err := rawToolArguments(req)
+	if err != nil {
+		return transaction.UpdateInput{}, err
+	}
+
+	out := transaction.UpdateInput{ID: in.ID}
+	if raw, ok := args["amount"]; ok {
+		if isJSONNull(raw) {
+			out.AmountNull = true
+		} else {
+			out.Amount = in.Amount
+		}
+	}
+	if raw, ok := args["merchant"]; ok {
+		if isJSONNull(raw) {
+			out.MerchantNull = true
+		} else {
+			out.Merchant = in.Merchant
+		}
+	}
+	if raw, ok := args["category"]; ok {
+		if isJSONNull(raw) {
+			out.CategoryNull = true
+		} else {
+			out.Category = in.Category
+		}
+	}
+	if raw, ok := args["date"]; ok {
+		if isJSONNull(raw) {
+			out.DateNull = true
+		} else {
+			out.Date = in.Date
+		}
+	}
+	if raw, ok := args["note"]; ok {
+		if isJSONNull(raw) {
+			out.Note = transaction.NotePatch{Present: true}
+		} else {
+			out.Note = transaction.NotePatch{Present: true, Value: in.Note}
+		}
+	}
+	return out, nil
+}
+
+func rawToolArguments(req *mcp.CallToolRequest) (map[string]json.RawMessage, error) {
+	if req == nil || req.Params == nil || len(req.Params.Arguments) == 0 {
+		return map[string]json.RawMessage{}, nil
+	}
+	var args map[string]json.RawMessage
+	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+		return nil, err
+	}
+	if args == nil {
+		return map[string]json.RawMessage{}, nil
+	}
+	return args, nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }

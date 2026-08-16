@@ -65,6 +65,51 @@ func stringPtr(value string) *string {
 	return &value
 }
 
+func noteClear() transaction.NotePatch {
+	return transaction.NotePatch{Present: true}
+}
+
+func noteValue(value string) transaction.NotePatch {
+	return transaction.NotePatch{Present: true, Value: stringPtr(value)}
+}
+
+func addTransaction(t *testing.T, ctx context.Context, store *transaction.Store, in transaction.AddInput) contract.Transaction {
+	t.Helper()
+	result, fields, err := store.Add(ctx, in)
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("Add() = %#v fields %#v error %v", result, fields, err)
+	}
+	return result.Transaction
+}
+
+func mustUpdate(t *testing.T, ctx context.Context, store *transaction.Store, in transaction.UpdateInput) transaction.UpdateResult {
+	t.Helper()
+	result, fields, err := store.Update(ctx, in)
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("Update() = %#v fields %#v error %v", result, fields, err)
+	}
+	return result
+}
+
+func seedGroceryTransaction(t *testing.T, ctx context.Context, store *transaction.Store) contract.Transaction {
+	t.Helper()
+	return addTransaction(t, ctx, store, transaction.AddInput{
+		Amount:   "20.00",
+		Merchant: "Metro",
+		Category: stringPtr("Groceries"),
+		Date:     stringPtr("2026-08-01"),
+		Note:     stringPtr("weekly"),
+	})
+}
+
+func assertStoredUnchanged(t *testing.T, ctx context.Context, db *sql.DB, before storedTransaction) {
+	t.Helper()
+	after := loadStoredTransaction(t, ctx, db, before.ID)
+	if after != before {
+		t.Fatalf("stored transaction changed: %#v vs %#v", after, before)
+	}
+}
+
 func insertBudget(t *testing.T, ctx context.Context, db *sql.DB, categoryID int64, month, amount string) {
 	t.Helper()
 	hundredths, err := contract.ParseAmount(amount)
@@ -132,6 +177,28 @@ func loadStoredMapping(t *testing.T, ctx context.Context, db *sql.DB, merchantNa
 		t.Fatalf("load mapping %q: %v", merchantName, err)
 	}
 	return row
+}
+
+func freezeTransactionTimestamps(t *testing.T, ctx context.Context, db *sql.DB, id int64, timestamp string) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `
+		UPDATE transactions
+		SET created_at = ?, updated_at = ?
+		WHERE id = ?
+	`, timestamp, timestamp, id); err != nil {
+		t.Fatalf("freeze transaction timestamps: %v", err)
+	}
+}
+
+func loadStoredTransaction(t *testing.T, ctx context.Context, db *sql.DB, id int64) storedTransaction {
+	t.Helper()
+	for _, row := range listStoredTransactions(t, ctx, db) {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("stored transaction %d not found", id)
+	return storedTransaction{}
 }
 
 func freezeMappingTimestamps(t *testing.T, ctx context.Context, db *sql.DB, id int64, timestamp string) {
