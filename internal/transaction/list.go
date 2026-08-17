@@ -13,8 +13,6 @@ const (
 	MaxLimit     int64 = 200
 )
 
-// ListInput is one list_transactions request at the store boundary.
-// Nil pointers are omitted fields.
 type ListInput struct {
 	StartDate *string
 	EndDate   *string
@@ -23,7 +21,6 @@ type ListInput struct {
 	Offset    *int64
 }
 
-// ListResult is one snapshot-consistent page of canonical transactions.
 type ListResult struct {
 	Transactions []contract.Transaction
 	Page         contract.Page
@@ -37,8 +34,6 @@ type validatedList struct {
 	offset    int64
 }
 
-// List returns transactions matching optional inclusive date and category
-// filters. It never writes transactions, mappings, or budgets.
 func (s *Store) List(ctx context.Context, in ListInput) (ListResult, []contract.FieldIssue, error) {
 	validated, fields := validateList(in)
 	if len(fields) != 0 {
