@@ -197,6 +197,50 @@ func TestStdioLifecycle(t *testing.T) {
 		t.Fatalf("listed note = %#v, want null", listedTxn.Note)
 	}
 
+	monthly, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "get_monthly_summary",
+		Arguments: map[string]any{"month": month},
+	})
+	if err != nil {
+		t.Fatalf("get_monthly_summary: %v", err)
+	}
+	if monthly.IsError {
+		t.Fatalf("get_monthly_summary IsError = true, want success: %#v", monthly)
+	}
+	monthlyPayload := structuredObject(t, monthly)
+	if keys := objectKeys(monthlyPayload); strings.Join(keys, ",") != "categories,month,ok,remaining,total_budget,total_spending" {
+		t.Fatalf("get_monthly_summary keys = %v", keys)
+	}
+	if monthlyPayload["ok"] != true || monthlyPayload["month"] != month || monthlyPayload["total_budget"] != "300.00" {
+		t.Fatalf("get_monthly_summary = %s, want current-month Groceries 300.00", structuredJSON(t, monthly))
+	}
+	monthlyCategories, ok := monthlyPayload["categories"].([]any)
+	if !ok || len(monthlyCategories) != 1 {
+		t.Fatalf("get_monthly_summary categories = %#v, want Groceries", monthlyPayload["categories"])
+	}
+	monthlyCategory := asObject(t, monthlyCategories[0])
+	if monthlyCategory["category"] != "Groceries" || monthlyCategory["budget"] != "300.00" {
+		t.Fatalf("monthly Groceries row = %#v", monthlyCategory)
+	}
+
+	categorySummary, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "get_category_summary",
+		Arguments: map[string]any{"category": "Groceries", "month": month},
+	})
+	if err != nil {
+		t.Fatalf("get_category_summary: %v", err)
+	}
+	if categorySummary.IsError {
+		t.Fatalf("get_category_summary IsError = true, want success: %#v", categorySummary)
+	}
+	categoryPayload := structuredObject(t, categorySummary)
+	if keys := objectKeys(categoryPayload); strings.Join(keys, ",") != "budget,category,category_id,month,ok,remaining,total_spending,transaction_count" {
+		t.Fatalf("get_category_summary keys = %v", keys)
+	}
+	if categoryPayload["ok"] != true || categoryPayload["month"] != month || categoryPayload["category"] != "Groceries" || categoryPayload["budget"] != "300.00" {
+		t.Fatalf("get_category_summary = %s, want current-month Groceries 300.00", structuredJSON(t, categorySummary))
+	}
+
 	closeAndWaitSession(t, session)
 	sessionClosed = true
 	if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {

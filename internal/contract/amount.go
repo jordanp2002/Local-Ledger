@@ -65,6 +65,22 @@ func FormatAmount(hundredths int64) (string, error) {
 	return strconv.FormatInt(whole, 10) + "." + twoDigits(fraction), nil
 }
 
+// FormatSignedAmount formats integer hundredths with two fractional digits.
+// Negative values use a leading minus, such as "-10.50".
+func FormatSignedAmount(hundredths int64) (string, error) {
+	if hundredths >= 0 {
+		return FormatAmount(hundredths)
+	}
+	if hundredths == math.MinInt64 {
+		return "", ErrInvalidAmount
+	}
+	formatted, err := FormatAmount(-hundredths)
+	if err != nil {
+		return "", err
+	}
+	return "-" + formatted, nil
+}
+
 func parseWholeAmount(value string) (int64, bool) {
 	var whole int64
 	for i := 0; i < len(value); i++ {

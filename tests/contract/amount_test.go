@@ -137,6 +137,62 @@ func TestFormatAmountRejectsNegativeHundredths(t *testing.T) {
 	}
 }
 
+func TestFormatSignedAmountFormatsZeroPositiveAndNegative(t *testing.T) {
+	tests := []struct {
+		name       string
+		hundredths int64
+		want       string
+	}{
+		{name: "zero", hundredths: 0, want: "0.00"},
+		{name: "one hundredth", hundredths: 1, want: "0.01"},
+		{name: "ten fifty", hundredths: 1050, want: "10.50"},
+		{name: "negative one hundredth", hundredths: -1, want: "-0.01"},
+		{name: "negative ten fifty", hundredths: -1050, want: "-10.50"},
+		{name: "maximum", hundredths: math.MaxInt64, want: "92233720368547758.07"},
+		{name: "negative maximum", hundredths: -math.MaxInt64, want: "-92233720368547758.07"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := contract.FormatSignedAmount(tt.hundredths)
+			if err != nil {
+				t.Fatalf("FormatSignedAmount(%d) error = %v", tt.hundredths, err)
+			}
+			if got != tt.want {
+				t.Fatalf("FormatSignedAmount(%d) = %q, want %q", tt.hundredths, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatSignedAmountRejectsMinInt64(t *testing.T) {
+	got, err := contract.FormatSignedAmount(math.MinInt64)
+	if err == nil {
+		t.Fatalf("FormatSignedAmount(MinInt64) = %q, nil error; want rejection", got)
+	}
+	if got != "" {
+		t.Fatalf("FormatSignedAmount(MinInt64) = %q on error, want empty string", got)
+	}
+}
+
+func TestFormatAmountStillRejectsNegativesAfterSignedFormatter(t *testing.T) {
+	got, err := contract.FormatAmount(-1)
+	if err == nil {
+		t.Fatalf("FormatAmount(-1) = %q, nil error; want rejection", got)
+	}
+	if got != "" {
+		t.Fatalf("FormatAmount(-1) = %q on error, want empty string", got)
+	}
+}
+
+func TestParseAmountStillRejectsSignedStrings(t *testing.T) {
+	for _, input := range []string{"-20", "-0.01", "+20"} {
+		if got, err := contract.ParseAmount(input); err == nil {
+			t.Fatalf("ParseAmount(%q) = %d, nil error; want rejection", input, got)
+		}
+	}
+}
+
 func TestFormatAmountRoundTripsThroughParseAmount(t *testing.T) {
 	tests := []int64{0, 1, 7, 50, 99, 100, 2050, 123456789, math.MaxInt64}
 
