@@ -59,11 +59,13 @@ func registerBudgetTools(srv *mcp.Server, store *budget.Store, logger *log.Logge
 	mcp.AddTool[createMonthlyBudgetInput, any](srv, &mcp.Tool{
 		Name:        "create_monthly_budget",
 		Description: "Create the current local month's budget snapshot using explicit allocations or by carrying forward the latest earlier month.",
+		Annotations: writableToolAnnotations(false, true),
 	}, tools.createMonthlyBudget)
 
 	mcp.AddTool[setBudgetsInput, any](srv, &mcp.Tool{
 		Name:        "set_budgets",
 		Description: "Replace or add allocations on the current local month's existing budget snapshot.",
+		Annotations: writableToolAnnotations(true, false),
 	}, tools.setBudgets)
 }
 

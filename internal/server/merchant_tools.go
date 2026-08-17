@@ -48,11 +48,13 @@ func registerMerchantTools(srv *mcp.Server, store *merchant.Store, categories *c
 	mcp.AddTool[setKnownMerchantInput, any](srv, &mcp.Tool{
 		Name:        "set_known_merchant",
 		Description: "Create or replace an exact merchant-to-category default.",
+		Annotations: writableToolAnnotations(true, true),
 	}, tools.setKnownMerchant)
 
 	mcp.AddTool[listKnownMerchantsInput, any](srv, &mcp.Tool{
 		Name:        "list_known_merchants",
 		Description: "List exact merchant-to-category defaults with optional search and pagination.",
+		Annotations: readOnlyToolAnnotations(),
 	}, tools.listKnownMerchants)
 }
 

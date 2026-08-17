@@ -51,11 +51,13 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 	mcp.AddTool[monthlySummaryInput, any](srv, &mcp.Tool{
 		Name:        "get_monthly_summary",
 		Description: "Compare a stored monthly budget snapshot with actual spending by category.",
+		Annotations: readOnlyToolAnnotations(),
 	}, tools.getMonthlySummary)
 
 	mcp.AddTool[categorySummaryInput, any](srv, &mcp.Tool{
 		Name:        "get_category_summary",
 		Description: "Compare one category's monthly allocation with its spending and transaction count.",
+		Annotations: readOnlyToolAnnotations(),
 	}, tools.getCategorySummary)
 }
 
