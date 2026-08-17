@@ -47,16 +47,19 @@ func registerCategoryTools(srv *mcp.Server, store *category.Store, logger *log.L
 	mcp.AddTool[categoryNameInput, any](srv, &mcp.Tool{
 		Name:        "create_category",
 		Description: "Create an active spending category, or re-enable an inactive category with the same name.",
+		Annotations: writableToolAnnotations(true, true),
 	}, tools.createCategory)
 
 	mcp.AddTool[listCategoriesInput, any](srv, &mcp.Tool{
 		Name:        "list_categories",
 		Description: "List active spending categories ordered by name.",
+		Annotations: readOnlyToolAnnotations(),
 	}, tools.listCategories)
 
 	mcp.AddTool[categoryNameInput, any](srv, &mcp.Tool{
 		Name:        "disable_category",
 		Description: "Disable a category and remove only its current-month budget.",
+		Annotations: writableToolAnnotations(true, true),
 	}, tools.disableCategory)
 }
 

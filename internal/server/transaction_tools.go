@@ -76,21 +76,25 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 	mcp.AddTool[addTransactionInput, any](srv, &mcp.Tool{
 		Name:        "add_transaction",
 		Description: "Record one expense and apply exact merchant-default mapping rules atomically.",
+		Annotations: writableToolAnnotations(true, false),
 	}, tools.addTransaction)
 
 	mcp.AddTool[updateTransactionInput, any](srv, &mcp.Tool{
 		Name:        "update_transaction",
 		Description: "Patch an existing expense without changing merchant defaults or budgets.",
+		Annotations: writableToolAnnotations(true, false),
 	}, tools.updateTransaction)
 
 	mcp.AddTool[removeTransactionInput, any](srv, &mcp.Tool{
 		Name:        "remove_transaction",
 		Description: "Permanently remove one expense by ID and return the deleted record.",
+		Annotations: writableToolAnnotations(true, true),
 	}, tools.removeTransaction)
 
 	mcp.AddTool[listTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "list_transactions",
 		Description: "List purchases with optional inclusive date bounds, category filter, and pagination.",
+		Annotations: readOnlyToolAnnotations(),
 	}, tools.listTransactions)
 }
 
