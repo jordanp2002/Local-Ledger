@@ -2,7 +2,7 @@
   <img src="assets/local-ledger-logo.png" alt="Local Ledger logo" width="240">
 </p>
 
-# Local Finance MCP
+# Local Ledger
 
 A local-first budgeting MCP server.
 
@@ -46,7 +46,7 @@ The server exposes thirteen finance tools:
 ## Build
 
 ```sh
-go build ./cmd/local-finance-mcp
+go build ./cmd/local-ledger
 ```
 
 ## Test
