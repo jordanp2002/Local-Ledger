@@ -1,4 +1,3 @@
-// Package contract defines stable finance-tool values.
 package contract
 
 import (
@@ -8,7 +7,6 @@ import (
 	"strings"
 )
 
-// ErrInvalidAmount reports an invalid non-negative amount.
 var ErrInvalidAmount = errors.New("invalid amount")
 
 const (

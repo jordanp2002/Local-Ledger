@@ -9,8 +9,6 @@ import (
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
 )
 
-// Remove deletes one existing transaction and returns the pre-delete
-// canonical record. It never reads or writes known_merchants or budgets.
 func (s *Store) Remove(ctx context.Context, id int64) (contract.Transaction, []contract.FieldIssue, error) {
 	if fields := validateRemove(id); len(fields) != 0 {
 		return contract.Transaction{}, fields, nil

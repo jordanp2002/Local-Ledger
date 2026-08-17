@@ -65,6 +65,10 @@ func stringPtr(value string) *string {
 	return &value
 }
 
+func int64Ptr(value int64) *int64 {
+	return &value
+}
+
 func noteClear() transaction.NotePatch {
 	return transaction.NotePatch{Present: true}
 }
