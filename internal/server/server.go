@@ -13,6 +13,7 @@ import (
 	"github.com/jordanp2002/local-finance-mcp/internal/category"
 	"github.com/jordanp2002/local-finance-mcp/internal/database"
 	"github.com/jordanp2002/local-finance-mcp/internal/merchant"
+	"github.com/jordanp2002/local-finance-mcp/internal/summary"
 	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -39,6 +40,7 @@ func New(db *sql.DB, now func() time.Time, logger *log.Logger) *mcp.Server {
 	registerBudgetTools(srv, &budget.Store{DB: db, Now: now}, logger)
 	registerCategoryTools(srv, categoryStore, logger)
 	registerMerchantTools(srv, &merchant.Store{DB: db}, categoryStore, logger)
+	registerSummaryTools(srv, &summary.Store{DB: db}, logger)
 	registerTransactionTools(srv, &transaction.Store{DB: db, Now: now}, logger)
 	return srv
 }

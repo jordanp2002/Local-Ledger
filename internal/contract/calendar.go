@@ -36,3 +36,18 @@ func ParseMonth(value string) (string, error) {
 	}
 	return value, nil
 }
+
+// MonthDateRange returns the inclusive YYYY-MM-DD start and end dates for a
+// canonical YYYY-MM month. It does not apply current-month policy.
+func MonthDateRange(month string) (string, string, error) {
+	parsed, err := ParseMonth(month)
+	if err != nil {
+		return "", "", err
+	}
+	start, err := time.Parse(monthLayout, parsed)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid month %q: %w", month, err)
+	}
+	end := start.AddDate(0, 1, -1)
+	return start.Format(dateLayout), end.Format(dateLayout), nil
+}

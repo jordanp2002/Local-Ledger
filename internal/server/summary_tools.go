@@ -1,0 +1,150 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+
+	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/summary"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+type monthlySummaryInput struct {
+	Month string `json:"month"`
+}
+
+type monthlySummaryOutput struct {
+	OK            bool                              `json:"ok"`
+	Month         string                            `json:"month"`
+	TotalBudget   string                            `json:"total_budget"`
+	TotalSpending string                            `json:"total_spending"`
+	Remaining     string                            `json:"remaining"`
+	Categories    []contract.MonthlySummaryCategory `json:"categories"`
+}
+
+type categorySummaryInput struct {
+	Category string `json:"category"`
+	Month    string `json:"month"`
+}
+
+type categorySummaryOutput struct {
+	OK               bool   `json:"ok"`
+	CategoryID       int64  `json:"category_id"`
+	Category         string `json:"category"`
+	Month            string `json:"month"`
+	Budget           string `json:"budget"`
+	TotalSpending    string `json:"total_spending"`
+	Remaining        string `json:"remaining"`
+	TransactionCount int64  `json:"transaction_count"`
+}
+
+type summaryTools struct {
+	store  *summary.Store
+	logger *log.Logger
+}
+
+func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Logger) {
+	tools := &summaryTools{store: store, logger: logger}
+
+	mcp.AddTool[monthlySummaryInput, any](srv, &mcp.Tool{
+		Name:        "get_monthly_summary",
+		Description: "Compare a stored monthly budget snapshot with actual spending by category.",
+	}, tools.getMonthlySummary)
+
+	mcp.AddTool[categorySummaryInput, any](srv, &mcp.Tool{
+		Name:        "get_category_summary",
+		Description: "Compare one category's monthly allocation with its spending and transaction count.",
+	}, tools.getCategorySummary)
+}
+
+func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolRequest, in monthlySummaryInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.Monthly(ctx, in.Month)
+	if len(fields) != 0 {
+		return toolError(invalidSummaryInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapSummaryError("get_monthly_summary", err)
+	}
+
+	categories := result.Categories
+	if categories == nil {
+		categories = []contract.MonthlySummaryCategory{}
+	}
+	return toolOK(monthlySummaryOutput{
+		OK:            true,
+		Month:         result.Month,
+		TotalBudget:   result.TotalBudget,
+		TotalSpending: result.TotalSpending,
+		Remaining:     result.Remaining,
+		Categories:    categories,
+	})
+}
+
+func (t *summaryTools) getCategorySummary(ctx context.Context, _ *mcp.CallToolRequest, in categorySummaryInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.Category(ctx, in.Category, in.Month)
+	if len(fields) != 0 {
+		return toolError(invalidSummaryInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapSummaryError("get_category_summary", err)
+	}
+
+	return toolOK(categorySummaryOutput{
+		OK:               true,
+		CategoryID:       result.CategoryID,
+		Category:         result.Category,
+		Month:            result.Month,
+		Budget:           result.Budget,
+		TotalSpending:    result.TotalSpending,
+		Remaining:        result.Remaining,
+		TransactionCount: result.TransactionCount,
+	})
+}
+
+func (t *summaryTools) mapSummaryError(tool string, err error) (*mcp.CallToolResult, any, error) {
+	var monthNotFound *summary.NotFoundError
+	if errors.As(err, &monthNotFound) {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeMonthlyBudgetNotFound,
+			fmt.Sprintf("No monthly budget exists for %s.", monthNotFound.Month),
+			false,
+			map[string]any{
+				"month":                monthNotFound.Month,
+				"latest_earlier_month": monthNotFound.LatestEarlierMonth,
+			},
+		)))
+	}
+
+	var categoryNotFound *summary.CategoryNotFoundError
+	if errors.As(err, &categoryNotFound) {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeCategoryNotFound,
+			fmt.Sprintf("Category '%s' does not exist.", categoryNotFound.Requested),
+			false,
+			map[string]any{
+				"requested_category": categoryNotFound.Requested,
+				"categories":         activeCategories(categoryNotFound.ActiveCategories),
+			},
+		)))
+	}
+
+	return t.internalError(tool, err)
+}
+
+func invalidSummaryInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
+	return contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeInvalidInput,
+		"",
+		false,
+		map[string]any{"fields": fields},
+	))
+}
+
+func (t *summaryTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
+	if t.logger != nil {
+		t.logger.Printf("%s: %v", tool, err)
+	}
+	return toolError(contract.NewInternalErrorEnvelope())
+}
