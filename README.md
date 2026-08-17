@@ -19,8 +19,8 @@ While this works and is still effective for my needs, I thought an MCP would be 
 Set `LOCAL_FINANCE_DB_PATH` to an absolute path before starting the server:
 
 ```sh
-export LOCAL_FINANCE_DB_PATH=/Users/you/.local/share/local-finance-mcp/finance.db
-go run ./cmd/local-finance-mcp
+export LOCAL_FINANCE_DB_PATH=/Users/you/.local/share/local-ledger/finance.db
+go run ./cmd/local-ledger
 ```
 
 The database file is your finance ledger. Back it up using your normal file-backup process; the server does not provide a backup subsystem.
