@@ -15,6 +15,11 @@ type categoryNameInput struct {
 	Name string `json:"name"`
 }
 
+type renameCategoryInput struct {
+	Category string `json:"category"`
+	NewName  string `json:"new_name"`
+}
+
 type listCategoriesInput struct{}
 
 type createCategoryOutput struct {
@@ -34,6 +39,13 @@ type disableCategoryOutput struct {
 	Category      contract.Category `json:"category"`
 	Changed       bool              `json:"changed"`
 	RemovedBudget *contract.Budget  `json:"removed_budget"`
+}
+
+type renameCategoryOutput struct {
+	OK           bool              `json:"ok"`
+	Category     contract.Category `json:"category"`
+	PreviousName string            `json:"previous_name"`
+	Changed      bool              `json:"changed"`
 }
 
 type categoryTools struct {
@@ -61,6 +73,12 @@ func registerCategoryTools(srv *mcp.Server, store *category.Store, logger *log.L
 		Description: "Disable a category and remove only its current-month budget.",
 		Annotations: writableToolAnnotations(true, true),
 	}, tools.disableCategory)
+
+	mcp.AddTool[renameCategoryInput, any](srv, &mcp.Tool{
+		Name:        "rename_category",
+		Description: "Rename a category while preserving its identity and financial history.",
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.renameCategory)
 }
 
 func (t *categoryTools) createCategory(ctx context.Context, _ *mcp.CallToolRequest, in categoryNameInput) (*mcp.CallToolResult, any, error) {
@@ -134,11 +152,45 @@ func (t *categoryTools) disableCategory(ctx context.Context, _ *mcp.CallToolRequ
 	})
 }
 
+func (t *categoryTools) renameCategory(ctx context.Context, _ *mcp.CallToolRequest, in renameCategoryInput) (*mcp.CallToolResult, any, error) {
+	cat, previousName, changed, err := t.store.Rename(ctx, in.Category, in.NewName)
+	if err != nil {
+		var validation *category.ValidationError
+		var collision *category.AlreadyExistsError
+		switch {
+		case errors.As(err, &validation):
+			return toolError(invalidCategoryInputEnvelope(validation.Fields))
+		case errors.Is(err, category.ErrNotFound):
+			return t.categoryNotFoundFor(ctx, in.Category, "rename_category")
+		case errors.As(err, &collision):
+			return toolError(contract.NewErrorEnvelope(contract.NewError(
+				contract.ErrorCodeCategoryAlreadyExists,
+				fmt.Sprintf("Category '%s' already exists.", collision.Category.Name),
+				false,
+				map[string]any{"category": collision.Category},
+			)))
+		default:
+			return t.internalError("rename_category", err)
+		}
+	}
+
+	return toolOK(renameCategoryOutput{
+		OK:           true,
+		Category:     cat,
+		PreviousName: previousName,
+		Changed:      changed,
+	})
+}
+
 func (t *categoryTools) categoryNotFound(ctx context.Context, name string) (*mcp.CallToolResult, any, error) {
+	return t.categoryNotFoundFor(ctx, name, "disable_category")
+}
+
+func (t *categoryTools) categoryNotFoundFor(ctx context.Context, name, tool string) (*mcp.CallToolResult, any, error) {
 	requested := category.NormalizeName(name)
 	cats, err := t.store.List(ctx)
 	if err != nil {
-		return t.internalError("disable_category", err)
+		return t.internalError(tool, err)
 	}
 
 	return toolError(contract.NewErrorEnvelope(contract.NewError(
@@ -175,6 +227,15 @@ func invalidNameEnvelope(reason string) contract.ErrorEnvelope {
 				{"field": "name", "reason": reason},
 			},
 		},
+	))
+}
+
+func invalidCategoryInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
+	return contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeInvalidInput,
+		"",
+		false,
+		map[string]any{"fields": fields},
 	))
 }
 

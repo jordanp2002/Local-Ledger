@@ -1,4 +1,4 @@
-// Package category implements create, list, and disable for spending categories.
+// Package category implements maintenance for spending categories.
 package category
 
 import (

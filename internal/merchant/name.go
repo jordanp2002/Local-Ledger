@@ -21,6 +21,8 @@ var (
 	ErrCategoryContainsNUL = fmt.Errorf("%w: contains NUL", ErrInvalidCategory)
 	ErrCategoryNotFound    = errors.New("category not found")
 	ErrCategoryInactive    = errors.New("category inactive")
+	ErrNotFound            = errors.New("known merchant not found")
+	ErrAlreadyExists       = errors.New("known merchant already exists")
 )
 
 // ValidationError contains format issues for a merchant operation.
@@ -81,8 +83,88 @@ func (e *CategoryInactiveError) Is(target error) bool {
 	return target == ErrCategoryInactive
 }
 
+type NotFoundError struct {
+	Requested string
+}
+
+func (e *NotFoundError) Error() string {
+	if e == nil {
+		return ErrNotFound.Error()
+	}
+	return fmt.Sprintf("known merchant %q not found", e.Requested)
+}
+
+func (e *NotFoundError) Is(target error) bool {
+	return target == ErrNotFound
+}
+
+type AlreadyExistsError struct {
+	KnownMerchant contract.KnownMerchant
+}
+
+func (e *AlreadyExistsError) Error() string {
+	if e == nil {
+		return ErrAlreadyExists.Error()
+	}
+	return fmt.Sprintf("known merchant %q already exists", e.KnownMerchant.Merchant)
+}
+
+func (e *AlreadyExistsError) Is(target error) bool {
+	return target == ErrAlreadyExists
+}
+
 func normalizeName(value string) string {
 	return contract.TrimASCIIWhitespace(value)
+}
+
+func validateMerchantName(value string) (string, error) {
+	merchantName := normalizeName(value)
+	switch {
+	case merchantName == "":
+		return "", ErrInvalidMerchant
+	case strings.ContainsRune(merchantName, '\x00'):
+		return "", ErrMerchantContainsNUL
+	default:
+		return merchantName, nil
+	}
+}
+
+func merchantFieldIssue(field string, err error) contract.FieldIssue {
+	if errors.Is(err, ErrMerchantContainsNUL) {
+		return contract.FieldIssue{Field: field, Reason: "must not contain NUL characters"}
+	}
+	return contract.FieldIssue{Field: field, Reason: "must not be empty"}
+}
+
+func validateRenameInputs(merchantName, newMerchantName string) (string, string, *ValidationError) {
+	normalizedMerchant, merchantErr := validateMerchantName(merchantName)
+	normalizedNewMerchant, newMerchantErr := validateMerchantName(newMerchantName)
+
+	issues := make([]contract.FieldIssue, 0, 2)
+	causes := make([]error, 0, 2)
+	if merchantErr != nil {
+		issues = append(issues, merchantFieldIssue("merchant", merchantErr))
+		causes = append(causes, merchantErr)
+	}
+	if newMerchantErr != nil {
+		issues = append(issues, merchantFieldIssue("new_merchant", newMerchantErr))
+		causes = append(causes, newMerchantErr)
+	}
+	if len(issues) == 0 {
+		return normalizedMerchant, normalizedNewMerchant, nil
+	}
+	return normalizedMerchant, normalizedNewMerchant, &ValidationError{Fields: issues, causes: causes}
+}
+
+func validateRemoveInput(merchantName string) (string, *ValidationError) {
+	normalized, err := validateMerchantName(merchantName)
+	if err == nil {
+		return normalized, nil
+	}
+	return normalized, &ValidationError{
+		Fields: []contract.FieldIssue{merchantFieldIssue("merchant", err)},
+		causes: []error{err},
+	}
 }
 
 func validateSetInputs(merchantName, categoryName string) (string, string, *ValidationError) {
