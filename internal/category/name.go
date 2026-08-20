@@ -15,7 +15,6 @@ var (
 	ErrNotFound        = errors.New("category not found")
 )
 
-// ValidationError contains format issues for a category rename.
 type ValidationError struct {
 	Fields []contract.FieldIssue
 	causes []error
@@ -28,7 +27,6 @@ func (e *ValidationError) Error() string {
 	return "invalid category input"
 }
 
-// Is matches the underlying field-specific validation errors.
 func (e *ValidationError) Is(target error) bool {
 	if e == nil {
 		return false
@@ -41,7 +39,6 @@ func (e *ValidationError) Is(target error) bool {
 	return false
 }
 
-// AlreadyExistsError identifies the category that conflicts with a rename.
 type AlreadyExistsError struct {
 	Category contract.Category
 }

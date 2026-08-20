@@ -9,7 +9,7 @@ import (
 )
 
 // Rename changes only a category's name, preserving its identity and related
-// records. The previous name and changed flag describe the committed result.
+// records.
 func (s *Store) Rename(ctx context.Context, name, newName string) (contract.Category, string, bool, error) {
 	name, newName, validationErr := validateRenameInputs(name, newName)
 	if validationErr != nil {

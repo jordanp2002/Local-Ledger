@@ -83,7 +83,6 @@ func (e *CategoryInactiveError) Is(target error) bool {
 	return target == ErrCategoryInactive
 }
 
-// NotFoundError identifies a missing known-merchant mapping.
 type NotFoundError struct {
 	Requested string
 }
@@ -99,7 +98,6 @@ func (e *NotFoundError) Is(target error) bool {
 	return target == ErrNotFound
 }
 
-// AlreadyExistsError identifies the mapping that conflicts with a rename.
 type AlreadyExistsError struct {
 	KnownMerchant contract.KnownMerchant
 }
