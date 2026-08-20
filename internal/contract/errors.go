@@ -10,6 +10,8 @@ const (
 	ErrorCodeCategoryNotFound           ErrorCode = "category_not_found"
 	ErrorCodeCategoryAlreadyExists      ErrorCode = "category_already_exists"
 	ErrorCodeCategoryInactive           ErrorCode = "category_inactive"
+	ErrorCodeKnownMerchantNotFound      ErrorCode = "known_merchant_not_found"
+	ErrorCodeKnownMerchantAlreadyExists ErrorCode = "known_merchant_already_exists"
 	ErrorCodeMerchantCategoryRequired   ErrorCode = "merchant_category_required"
 	ErrorCodeMerchantCategoryInactive   ErrorCode = "merchant_category_inactive"
 	ErrorCodeTransactionNotFound        ErrorCode = "transaction_not_found"
@@ -126,6 +128,10 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The category already exists."
 	case ErrorCodeCategoryInactive:
 		return "The requested category is inactive."
+	case ErrorCodeKnownMerchantNotFound:
+		return "The known merchant was not found."
+	case ErrorCodeKnownMerchantAlreadyExists:
+		return "The known merchant already exists."
 	case ErrorCodeMerchantCategoryRequired:
 		return "An active category is required for this merchant."
 	case ErrorCodeMerchantCategoryInactive:

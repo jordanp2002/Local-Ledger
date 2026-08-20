@@ -17,6 +17,15 @@ type setKnownMerchantInput struct {
 	Category string `json:"category"`
 }
 
+type renameKnownMerchantInput struct {
+	Merchant    string `json:"merchant"`
+	NewMerchant string `json:"new_merchant"`
+}
+
+type removeKnownMerchantInput struct {
+	Merchant string `json:"merchant"`
+}
+
 type listKnownMerchantsInput struct {
 	Query  string `json:"query,omitempty"`
 	Limit  *int64 `json:"limit,omitempty"`
@@ -34,6 +43,18 @@ type listKnownMerchantsOutput struct {
 	OK             bool                     `json:"ok"`
 	KnownMerchants []contract.KnownMerchant `json:"known_merchants"`
 	Page           contract.Page            `json:"page"`
+}
+
+type renameKnownMerchantOutput struct {
+	OK               bool                   `json:"ok"`
+	KnownMerchant    contract.KnownMerchant `json:"known_merchant"`
+	PreviousMerchant string                 `json:"previous_merchant"`
+	Changed          bool                   `json:"changed"`
+}
+
+type removeKnownMerchantOutput struct {
+	OK                   bool                   `json:"ok"`
+	RemovedKnownMerchant contract.KnownMerchant `json:"removed_known_merchant"`
 }
 
 type merchantTools struct {
@@ -56,6 +77,18 @@ func registerMerchantTools(srv *mcp.Server, store *merchant.Store, categories *c
 		Description: "List exact merchant-to-category defaults with optional search and pagination.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.listKnownMerchants)
+
+	mcp.AddTool[renameKnownMerchantInput, any](srv, &mcp.Tool{
+		Name:        "rename_known_merchant",
+		Description: "Rename a known merchant default while preserving its mapping and transaction history.",
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.renameKnownMerchant)
+
+	mcp.AddTool[removeKnownMerchantInput, any](srv, &mcp.Tool{
+		Name:        "remove_known_merchant",
+		Description: "Remove a known merchant default without changing transaction history.",
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.removeKnownMerchant)
 }
 
 func (t *merchantTools) setKnownMerchant(ctx context.Context, _ *mcp.CallToolRequest, in setKnownMerchantInput) (*mcp.CallToolResult, any, error) {
@@ -123,6 +156,71 @@ func (t *merchantTools) listKnownMerchants(ctx context.Context, _ *mcp.CallToolR
 		KnownMerchants: knownMerchants,
 		Page:           result.Page,
 	})
+}
+
+func (t *merchantTools) renameKnownMerchant(ctx context.Context, _ *mcp.CallToolRequest, in renameKnownMerchantInput) (*mcp.CallToolResult, any, error) {
+	knownMerchant, previousMerchant, changed, err := t.store.Rename(ctx, in.Merchant, in.NewMerchant)
+	if err != nil {
+		var validation *merchant.ValidationError
+		var notFound *merchant.NotFoundError
+		var collision *merchant.AlreadyExistsError
+		switch {
+		case errors.As(err, &validation):
+			return toolError(invalidMerchantInputEnvelope(validation.Fields))
+		case errors.As(err, &notFound):
+			return knownMerchantNotFoundEnvelope(notFound.Requested)
+		case errors.As(err, &collision):
+			return knownMerchantAlreadyExistsEnvelope(collision.KnownMerchant)
+		default:
+			return t.internalError("rename_known_merchant", err)
+		}
+	}
+
+	return toolOK(renameKnownMerchantOutput{
+		OK:               true,
+		KnownMerchant:    knownMerchant,
+		PreviousMerchant: previousMerchant,
+		Changed:          changed,
+	})
+}
+
+func (t *merchantTools) removeKnownMerchant(ctx context.Context, _ *mcp.CallToolRequest, in removeKnownMerchantInput) (*mcp.CallToolResult, any, error) {
+	knownMerchant, err := t.store.Remove(ctx, in.Merchant)
+	if err != nil {
+		var validation *merchant.ValidationError
+		var notFound *merchant.NotFoundError
+		switch {
+		case errors.As(err, &validation):
+			return toolError(invalidMerchantInputEnvelope(validation.Fields))
+		case errors.As(err, &notFound):
+			return knownMerchantNotFoundEnvelope(notFound.Requested)
+		default:
+			return t.internalError("remove_known_merchant", err)
+		}
+	}
+
+	return toolOK(removeKnownMerchantOutput{
+		OK:                   true,
+		RemovedKnownMerchant: knownMerchant,
+	})
+}
+
+func knownMerchantNotFoundEnvelope(requested string) (*mcp.CallToolResult, any, error) {
+	return toolError(contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeKnownMerchantNotFound,
+		fmt.Sprintf("Known merchant '%s' does not exist.", requested),
+		false,
+		map[string]any{"requested_merchant": requested},
+	)))
+}
+
+func knownMerchantAlreadyExistsEnvelope(conflict contract.KnownMerchant) (*mcp.CallToolResult, any, error) {
+	return toolError(contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeKnownMerchantAlreadyExists,
+		fmt.Sprintf("Known merchant '%s' already exists.", conflict.Merchant),
+		false,
+		map[string]any{"known_merchant": conflict},
+	)))
 }
 
 func invalidMerchantInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {

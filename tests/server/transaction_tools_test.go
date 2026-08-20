@@ -24,8 +24,8 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 13 {
-		t.Fatalf("tool count = %d, want 13", len(result.Tools))
+	if len(result.Tools) != 16 {
+		t.Fatalf("tool count = %d, want 16", len(result.Tools))
 	}
 
 	var tool *mcp.Tool
@@ -455,8 +455,8 @@ func TestUpdateRemoveTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 13 {
-		t.Fatalf("tool count = %d, want 13", len(result.Tools))
+	if len(result.Tools) != 16 {
+		t.Fatalf("tool count = %d, want 16", len(result.Tools))
 	}
 
 	updateTool := toolByName(t, result.Tools, "update_transaction")
@@ -951,8 +951,8 @@ func TestListTransactionsToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 13 {
-		t.Fatalf("tool count = %d, want 13", len(result.Tools))
+	if len(result.Tools) != 16 {
+		t.Fatalf("tool count = %d, want 16", len(result.Tools))
 	}
 
 	tool := toolByName(t, result.Tools, "list_transactions")
