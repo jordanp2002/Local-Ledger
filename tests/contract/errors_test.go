@@ -19,6 +19,8 @@ func TestErrorCodesMatchApprovedContract(t *testing.T) {
 		{name: "category not found", code: contract.ErrorCodeCategoryNotFound, want: "category_not_found"},
 		{name: "category already exists", code: contract.ErrorCodeCategoryAlreadyExists, want: "category_already_exists"},
 		{name: "category inactive", code: contract.ErrorCodeCategoryInactive, want: "category_inactive"},
+		{name: "known merchant not found", code: contract.ErrorCodeKnownMerchantNotFound, want: "known_merchant_not_found"},
+		{name: "known merchant already exists", code: contract.ErrorCodeKnownMerchantAlreadyExists, want: "known_merchant_already_exists"},
 		{name: "merchant category required", code: contract.ErrorCodeMerchantCategoryRequired, want: "merchant_category_required"},
 		{name: "merchant category inactive", code: contract.ErrorCodeMerchantCategoryInactive, want: "merchant_category_inactive"},
 		{name: "transaction not found", code: contract.ErrorCodeTransactionNotFound, want: "transaction_not_found"},

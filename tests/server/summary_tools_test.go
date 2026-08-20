@@ -21,8 +21,8 @@ func TestSummaryToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 13 {
-		t.Fatalf("tool count = %d, want 13", len(result.Tools))
+	if len(result.Tools) != 16 {
+		t.Fatalf("tool count = %d, want 16", len(result.Tools))
 	}
 
 	monthly := toolByName(t, result.Tools, "get_monthly_summary")
