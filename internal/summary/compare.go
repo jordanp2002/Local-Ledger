@@ -1,0 +1,282 @@
+package summary
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+
+	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+)
+
+// Compare compares two stored monthly budget snapshots and their spending.
+// All reads and calculations use one SQLite read transaction so both sides
+// describe the same database snapshot.
+func (s *Store) Compare(ctx context.Context, fromMonth, toMonth string) (ComparisonResult, []contract.FieldIssue, error) {
+	fields := make([]contract.FieldIssue, 0, 2)
+	from, fromIssue := validateMonthField(fromMonth, "from_month")
+	if fromIssue != nil {
+		fields = append(fields, *fromIssue)
+	}
+	to, toIssue := validateMonthField(toMonth, "to_month")
+	if toIssue != nil {
+		fields = append(fields, *toIssue)
+	}
+	if fromIssue == nil && toIssue == nil && to <= from {
+		fields = append(fields, contract.FieldIssue{
+			Field:  "to_month",
+			Reason: "must be later than from_month",
+		})
+	}
+	if len(fields) != 0 {
+		return ComparisonResult{}, fields, nil
+	}
+	if s == nil || s.DB == nil {
+		return ComparisonResult{}, nil, errors.New("summary store database is nil")
+	}
+	return s.compare(ctx, from, to)
+}
+
+type comparisonMonth struct {
+	month         string
+	amounts       map[int64]*categoryAmounts
+	totalBudget   int64
+	totalSpending int64
+}
+
+func (s *Store) compare(ctx context.Context, fromMonth, toMonth string) (ComparisonResult, []contract.FieldIssue, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	from, err := loadComparisonMonth(ctx, tx, fromMonth)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+	to, err := loadComparisonMonth(ctx, tx, toMonth)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+
+	fromRemaining, ok := checkedSubtract(from.totalBudget, from.totalSpending)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("remaining")
+	}
+	toRemaining, ok := checkedSubtract(to.totalBudget, to.totalSpending)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("remaining")
+	}
+
+	budgetChange, ok := checkedSubtract(to.totalBudget, from.totalBudget)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("budget change")
+	}
+	spendingChange, ok := checkedSubtract(to.totalSpending, from.totalSpending)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("spending change")
+	}
+	remainingChange, ok := checkedSubtract(toRemaining, fromRemaining)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("remaining change")
+	}
+
+	categories, err := comparisonCategories(ctx, tx, from.amounts, to.amounts)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+
+	fromResult, err := formatComparisonMonth(from, fromRemaining)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+	toResult, err := formatComparisonMonth(to, toRemaining)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+	change, err := formatComparisonChange(budgetChange, spendingChange, remainingChange)
+	if err != nil {
+		return ComparisonResult{}, nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return ComparisonResult{}, nil, err
+	}
+	return ComparisonResult{
+		From:       fromResult,
+		To:         toResult,
+		Change:     change,
+		Categories: categories,
+	}, nil, nil
+}
+
+func loadComparisonMonth(ctx context.Context, tx *sql.Tx, month string) (comparisonMonth, error) {
+	exists, err := budgetMonthExists(ctx, tx, month)
+	if err != nil {
+		return comparisonMonth{}, err
+	}
+	if !exists {
+		return comparisonMonth{}, missingMonthError(ctx, tx, month)
+	}
+
+	startDate, endDate, err := contract.MonthDateRange(month)
+	if err != nil {
+		return comparisonMonth{}, err
+	}
+	amounts, totalBudget, err := loadMonthBudgets(ctx, tx, month)
+	if err != nil {
+		return comparisonMonth{}, err
+	}
+	totalSpending, err := addMonthSpending(ctx, tx, startDate, endDate, amounts)
+	if err != nil {
+		return comparisonMonth{}, err
+	}
+	return comparisonMonth{
+		month:         month,
+		amounts:       amounts,
+		totalBudget:   totalBudget,
+		totalSpending: totalSpending,
+	}, nil
+}
+
+func comparisonCategories(ctx context.Context, tx *sql.Tx, from, to map[int64]*categoryAmounts) ([]contract.ComparisonCategory, error) {
+	ids := make(map[int64]struct{}, len(from)+len(to))
+	for id, row := range from {
+		if row.budget > 0 || row.spending > 0 {
+			ids[id] = struct{}{}
+		}
+	}
+	for id, row := range to {
+		if row.budget > 0 || row.spending > 0 {
+			ids[id] = struct{}{}
+		}
+	}
+
+	allIDs := make([]int64, 0, len(ids))
+	for id := range ids {
+		allIDs = append(allIDs, id)
+	}
+	ordered, err := orderCategoryIDs(ctx, tx, allIDs)
+	if err != nil {
+		return nil, err
+	}
+	categories := make([]contract.ComparisonCategory, 0, len(ordered))
+	for _, id := range ordered {
+		fromBudget, fromSpending := categoryAmountsFor(from, id)
+		toBudget, toSpending := categoryAmountsFor(to, id)
+
+		budgetChange, ok := checkedSubtract(toBudget, fromBudget)
+		if !ok {
+			return nil, fmtOverflow("category budget change")
+		}
+		spendingChange, ok := checkedSubtract(toSpending, fromSpending)
+		if !ok {
+			return nil, fmtOverflow("category spending change")
+		}
+		name, err := categoryName(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+
+		row, err := formatComparisonCategory(id, name, fromBudget, toBudget, budgetChange, fromSpending, toSpending, spendingChange)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, row)
+	}
+	return categories, nil
+}
+
+func categoryAmountsFor(amounts map[int64]*categoryAmounts, id int64) (int64, int64) {
+	row, ok := amounts[id]
+	if !ok {
+		return 0, 0
+	}
+	return row.budget, row.spending
+}
+
+func categoryName(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
+	var name string
+	if err := tx.QueryRowContext(ctx, `SELECT name FROM categories WHERE id = ?`, id).Scan(&name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+func formatComparisonMonth(month comparisonMonth, remaining int64) (contract.ComparisonMonth, error) {
+	totalBudget, err := contract.FormatAmount(month.totalBudget)
+	if err != nil {
+		return contract.ComparisonMonth{}, err
+	}
+	totalSpending, err := contract.FormatAmount(month.totalSpending)
+	if err != nil {
+		return contract.ComparisonMonth{}, err
+	}
+	formattedRemaining, err := contract.FormatSignedAmount(remaining)
+	if err != nil {
+		return contract.ComparisonMonth{}, err
+	}
+	return contract.ComparisonMonth{
+		Month:         month.month,
+		TotalBudget:   totalBudget,
+		TotalSpending: totalSpending,
+		Remaining:     formattedRemaining,
+	}, nil
+}
+
+func formatComparisonChange(budget, spending, remaining int64) (contract.ComparisonChange, error) {
+	totalBudget, err := contract.FormatSignedAmount(budget)
+	if err != nil {
+		return contract.ComparisonChange{}, err
+	}
+	totalSpending, err := contract.FormatSignedAmount(spending)
+	if err != nil {
+		return contract.ComparisonChange{}, err
+	}
+	formattedRemaining, err := contract.FormatSignedAmount(remaining)
+	if err != nil {
+		return contract.ComparisonChange{}, err
+	}
+	return contract.ComparisonChange{
+		TotalBudget:   totalBudget,
+		TotalSpending: totalSpending,
+		Remaining:     formattedRemaining,
+	}, nil
+}
+
+func formatComparisonCategory(id int64, name string, fromBudget, toBudget, budgetChange, fromSpending, toSpending, spendingChange int64) (contract.ComparisonCategory, error) {
+	formattedFromBudget, err := contract.FormatAmount(fromBudget)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedToBudget, err := contract.FormatAmount(toBudget)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedBudgetChange, err := contract.FormatSignedAmount(budgetChange)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedFromSpending, err := contract.FormatAmount(fromSpending)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedToSpending, err := contract.FormatAmount(toSpending)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedSpendingChange, err := contract.FormatSignedAmount(spendingChange)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	return contract.ComparisonCategory{
+		CategoryID:     id,
+		Category:       name,
+		FromBudget:     formattedFromBudget,
+		ToBudget:       formattedToBudget,
+		BudgetChange:   formattedBudgetChange,
+		FromSpending:   formattedFromSpending,
+		ToSpending:     formattedToSpending,
+		SpendingChange: formattedSpendingChange,
+	}, nil
+}

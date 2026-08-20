@@ -21,8 +21,8 @@ func TestSummaryToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 16 {
-		t.Fatalf("tool count = %d, want 16", len(result.Tools))
+	if len(result.Tools) != 17 {
+		t.Fatalf("tool count = %d, want 17", len(result.Tools))
 	}
 
 	monthly := toolByName(t, result.Tools, "get_monthly_summary")
@@ -44,6 +44,157 @@ func TestSummaryToolDiscovery(t *testing.T) {
 	categoryRequired, _ := categorySchema["required"].([]any)
 	if !containsValue(categoryRequired, "category") || !containsValue(categoryRequired, "month") || len(categoryRequired) != 2 {
 		t.Fatalf("get_category_summary required = %v, want category and month", categoryRequired)
+	}
+
+	compareTool := toolByName(t, result.Tools, "compare_months")
+	compareSchema := schemaObject(t, compareTool.InputSchema)
+	compareRequired, _ := compareSchema["required"].([]any)
+	if !containsValue(compareRequired, "from_month") || !containsValue(compareRequired, "to_month") || len(compareRequired) != 2 {
+		t.Fatalf("compare_months required = %v, want from_month and to_month", compareRequired)
+	}
+	compareProperties, _ := compareSchema["properties"].(map[string]any)
+	for _, field := range []string{"from_month", "to_month"} {
+		fieldSchema, _ := compareProperties[field].(map[string]any)
+		if fieldSchema["type"] != "string" {
+			t.Fatalf("compare_months %s schema = %#v, want string", field, compareProperties[field])
+		}
+	}
+}
+
+func TestCompareMonthsSuccess(t *testing.T) {
+	db := openCategoryDB(t)
+	session := connectCategorySession(t, db, fixedBudgetNow, nil)
+	dining := createCategoryForMerchantTest(t, session, "Dining")
+	groceries := createCategoryForMerchantTest(t, session, "Groceries")
+	health := createCategoryForMerchantTest(t, session, "Health")
+	insertCurrentMonthBudget(t, db, groceries.ID, "2026-07", 50000)
+	insertCurrentMonthBudget(t, db, dining.ID, "2026-07", 10000)
+	createAugustBudget(t, session, []map[string]any{
+		{"category": "Groceries", "amount": "450.00"},
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "90.00", "merchant": "Metro", "category": "Groceries", "date": "2026-07-10",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "120.00", "merchant": "Metro", "category": "Groceries", "date": "2026-08-10",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "20.00", "merchant": "Shoppers", "category": "Health", "date": "2026-08-11",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "30.00", "merchant": "Cafe", "category": "Dining", "date": "2026-07-12",
+	})
+	if _, err := db.ExecContext(context.Background(), `UPDATE categories SET name = ? WHERE id = ?`, "Food & Dining", dining.ID); err != nil {
+		t.Fatalf("rename Dining: %v", err)
+	}
+
+	result := callTool(t, session, "compare_months", map[string]any{
+		"from_month": "2026-07",
+		"to_month":   "2026-08",
+	})
+	if result.IsError {
+		t.Fatalf("compare_months failed: %s", structuredJSON(t, result))
+	}
+	got := structuredObject(t, result)
+	if keys := objectKeys(got); strings.Join(keys, ",") != "categories,change,from,ok,to" {
+		t.Fatalf("keys = %v", keys)
+	}
+	if got["ok"] != true {
+		t.Fatalf("ok = %v, want true", got["ok"])
+	}
+	from := objectField(t, got, "from")
+	if from["month"] != "2026-07" || from["total_budget"] != "600.00" || from["total_spending"] != "120.00" || from["remaining"] != "480.00" {
+		t.Fatalf("from = %#v", from)
+	}
+	to := objectField(t, got, "to")
+	if to["month"] != "2026-08" || to["total_budget"] != "450.00" || to["total_spending"] != "140.00" || to["remaining"] != "310.00" {
+		t.Fatalf("to = %#v", to)
+	}
+	change := objectField(t, got, "change")
+	if change["total_budget"] != "-150.00" || change["total_spending"] != "20.00" || change["remaining"] != "-170.00" {
+		t.Fatalf("change = %#v", change)
+	}
+	rows := comparisonCategories(t, got)
+	if len(rows) != 3 {
+		t.Fatalf("categories = %#v, want three rows", rows)
+	}
+	if rows[0]["category"] != "Food & Dining" || rows[0]["category_id"] != float64(dining.ID) || rows[0]["from_budget"] != "100.00" || rows[0]["to_budget"] != "0.00" || rows[0]["budget_change"] != "-100.00" || rows[0]["from_spending"] != "30.00" || rows[0]["to_spending"] != "0.00" || rows[0]["spending_change"] != "-30.00" {
+		t.Fatalf("Food & Dining = %#v", rows[0])
+	}
+	if rows[1]["category"] != "Groceries" || rows[1]["category_id"] != float64(groceries.ID) || rows[1]["budget_change"] != "-50.00" || rows[1]["spending_change"] != "30.00" {
+		t.Fatalf("Groceries = %#v", rows[1])
+	}
+	if rows[2]["category"] != "Health" || rows[2]["category_id"] != float64(health.ID) || rows[2]["from_budget"] != "0.00" || rows[2]["to_budget"] != "0.00" || rows[2]["from_spending"] != "0.00" || rows[2]["to_spending"] != "20.00" || rows[2]["spending_change"] != "20.00" {
+		t.Fatalf("Health = %#v", rows[2])
+	}
+}
+
+func TestCompareMonthsValidationMissingAndEmpty(t *testing.T) {
+	db := openCategoryDB(t)
+	session := connectCategorySession(t, db, fixedBudgetNow, nil)
+	groceries := createCategoryForMerchantTest(t, session, "Groceries")
+	insertCurrentMonthBudget(t, db, groceries.ID, "2026-07", 0)
+	insertCurrentMonthBudget(t, db, groceries.ID, "2026-08", 0)
+
+	invalid := callTool(t, session, "compare_months", map[string]any{
+		"from_month": "2026-7",
+		"to_month":   "2026-13",
+	})
+	if !invalid.IsError {
+		t.Fatal("invalid compare_months IsError = false, want true")
+	}
+	requireStructuredEqual(t, invalid, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeInvalidInput,
+		"",
+		false,
+		map[string]any{
+			"fields": []contract.FieldIssue{
+				{Field: "from_month", Reason: "must be a valid YYYY-MM month"},
+				{Field: "to_month", Reason: "must be a valid YYYY-MM month"},
+			},
+		},
+	)))
+
+	for _, months := range []map[string]any{
+		{"from_month": "2026-08", "to_month": "2026-08"},
+		{"from_month": "2026-08", "to_month": "2026-07"},
+	} {
+		relationship := callTool(t, session, "compare_months", months)
+		if !relationship.IsError {
+			t.Fatalf("relationship input %#v IsError = false, want true", months)
+		}
+		requireStructuredEqual(t, relationship, contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeInvalidInput,
+			"",
+			false,
+			map[string]any{"fields": []contract.FieldIssue{{Field: "to_month", Reason: "must be later than from_month"}}},
+		)))
+	}
+
+	missing := callTool(t, session, "compare_months", map[string]any{
+		"from_month": "2026-08",
+		"to_month":   "2026-09",
+	})
+	if !missing.IsError {
+		t.Fatal("missing to_month snapshot IsError = false, want true")
+	}
+	requireStructuredEqual(t, missing, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeMonthlyBudgetNotFound,
+		"No monthly budget exists for 2026-09.",
+		false,
+		map[string]any{"month": "2026-09", "latest_earlier_month": "2026-08"},
+	)))
+
+	empty := callTool(t, session, "compare_months", map[string]any{
+		"from_month": "2026-07",
+		"to_month":   "2026-08",
+	})
+	if empty.IsError {
+		t.Fatalf("empty compare_months failed: %s", structuredJSON(t, empty))
+	}
+	rows := comparisonCategories(t, structuredObject(t, empty))
+	if rows == nil || len(rows) != 0 {
+		t.Fatalf("empty categories = %#v, want non-nil empty slice", rows)
 	}
 }
 
@@ -221,6 +372,30 @@ func TestGetMonthlySummaryInternalError(t *testing.T) {
 	}
 }
 
+func TestCompareMonthsInternalError(t *testing.T) {
+	db := openCategoryDB(t)
+	var logs bytes.Buffer
+	session := connectCategorySession(t, db, fixedBudgetNow, log.New(&logs, "", 0))
+	if err := db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+
+	result := callTool(t, session, "compare_months", map[string]any{
+		"from_month": "2026-07",
+		"to_month":   "2026-08",
+	})
+	if !result.IsError {
+		t.Fatal("internal compare_months IsError = false, want true")
+	}
+	requireStructuredEqual(t, result, contract.NewInternalErrorEnvelope())
+	if leakedInternalError(structuredJSON(t, result)) || leakedInternalError(toolText(result)) {
+		t.Fatalf("public payload leaked internal details: %s", structuredJSON(t, result))
+	}
+	if logs.Len() == 0 {
+		t.Fatal("logger did not record the private cause")
+	}
+}
+
 func createAugustBudget(t *testing.T, session *mcp.ClientSession, allocations []map[string]any) {
 	t.Helper()
 	result := callTool(t, session, "create_monthly_budget", map[string]any{
@@ -233,6 +408,19 @@ func createAugustBudget(t *testing.T, session *mcp.ClientSession, allocations []
 }
 
 func monthlyCategories(t *testing.T, payload map[string]any) []map[string]any {
+	t.Helper()
+	raw, ok := payload["categories"].([]any)
+	if !ok || raw == nil {
+		t.Fatalf("categories = %#v, want array", payload["categories"])
+	}
+	rows := make([]map[string]any, len(raw))
+	for i, value := range raw {
+		rows[i] = asObject(t, value)
+	}
+	return rows
+}
+
+func comparisonCategories(t *testing.T, payload map[string]any) []map[string]any {
 	t.Helper()
 	raw, ok := payload["categories"].([]any)
 	if !ok || raw == nil {
