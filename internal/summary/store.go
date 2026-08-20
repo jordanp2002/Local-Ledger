@@ -26,6 +26,14 @@ type MonthlyResult struct {
 	Categories    []contract.MonthlySummaryCategory
 }
 
+// ComparisonResult is the canonical result of compare_months.
+type ComparisonResult struct {
+	From       contract.ComparisonMonth
+	To         contract.ComparisonMonth
+	Change     contract.ComparisonChange
+	Categories []contract.ComparisonCategory
+}
+
 // Store owns summary validation and read-only persistence.
 type Store struct {
 	DB *sql.DB
@@ -98,10 +106,14 @@ func (s *Store) Category(ctx context.Context, categoryName, month string) (contr
 }
 
 func validateMonth(month string) (string, *contract.FieldIssue) {
+	return validateMonthField(month, "month")
+}
+
+func validateMonthField(month, field string) (string, *contract.FieldIssue) {
 	parsed, err := contract.ParseMonth(month)
 	if err != nil {
 		return "", &contract.FieldIssue{
-			Field:  "month",
+			Field:  field,
 			Reason: "must be a valid YYYY-MM month",
 		}
 	}
@@ -133,6 +145,20 @@ func checkedAdd(left, right int64) (int64, bool) {
 	return left + right, true
 }
 
+func checkedSubtract(left, right int64) (int64, bool) {
+	if right > 0 && left < math.MinInt64+right {
+		return 0, false
+	}
+	if right < 0 && left > math.MaxInt64+right {
+		return 0, false
+	}
+	return left - right, true
+}
+
 func formatRemaining(budget, spending int64) (string, error) {
-	return contract.FormatSignedAmount(budget - spending)
+	remaining, ok := checkedSubtract(budget, spending)
+	if !ok {
+		return "", fmtOverflow("remaining")
+	}
+	return contract.FormatSignedAmount(remaining)
 }

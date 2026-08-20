@@ -40,6 +40,19 @@ type categorySummaryOutput struct {
 	TransactionCount int64  `json:"transaction_count"`
 }
 
+type compareMonthsInput struct {
+	FromMonth string `json:"from_month"`
+	ToMonth   string `json:"to_month"`
+}
+
+type compareMonthsOutput struct {
+	OK         bool                          `json:"ok"`
+	From       contract.ComparisonMonth      `json:"from"`
+	To         contract.ComparisonMonth      `json:"to"`
+	Change     contract.ComparisonChange     `json:"change"`
+	Categories []contract.ComparisonCategory `json:"categories"`
+}
+
 type summaryTools struct {
 	store  *summary.Store
 	logger *log.Logger
@@ -59,6 +72,12 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 		Description: "Compare one category's monthly allocation with its spending and transaction count.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.getCategorySummary)
+
+	mcp.AddTool[compareMonthsInput, any](srv, &mcp.Tool{
+		Name:        "compare_months",
+		Description: "Compare two stored monthly budget snapshots and their spending.",
+		Annotations: readOnlyToolAnnotations(),
+	}, tools.compareMonths)
 }
 
 func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolRequest, in monthlySummaryInput) (*mcp.CallToolResult, any, error) {
@@ -102,6 +121,28 @@ func (t *summaryTools) getCategorySummary(ctx context.Context, _ *mcp.CallToolRe
 		TotalSpending:    result.TotalSpending,
 		Remaining:        result.Remaining,
 		TransactionCount: result.TransactionCount,
+	})
+}
+
+func (t *summaryTools) compareMonths(ctx context.Context, _ *mcp.CallToolRequest, in compareMonthsInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.Compare(ctx, in.FromMonth, in.ToMonth)
+	if len(fields) != 0 {
+		return toolError(invalidSummaryInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapSummaryError("compare_months", err)
+	}
+
+	categories := result.Categories
+	if categories == nil {
+		categories = []contract.ComparisonCategory{}
+	}
+	return toolOK(compareMonthsOutput{
+		OK:         true,
+		From:       result.From,
+		To:         result.To,
+		Change:     result.Change,
+		Categories: categories,
 	})
 }
 

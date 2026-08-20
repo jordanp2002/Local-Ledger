@@ -65,3 +65,30 @@ type CategorySummary struct {
 	Remaining        string `json:"remaining"`
 	TransactionCount int64  `json:"transaction_count"`
 }
+
+// ComparisonMonth contains one side of a two-month comparison.
+type ComparisonMonth struct {
+	Month         string `json:"month"`
+	TotalBudget   string `json:"total_budget"`
+	TotalSpending string `json:"total_spending"`
+	Remaining     string `json:"remaining"`
+}
+
+// ComparisonChange contains the later-month minus earlier-month totals.
+type ComparisonChange struct {
+	TotalBudget   string `json:"total_budget"`
+	TotalSpending string `json:"total_spending"`
+	Remaining     string `json:"remaining"`
+}
+
+// ComparisonCategory contains one category's values in both months and their changes.
+type ComparisonCategory struct {
+	CategoryID     int64  `json:"category_id"`
+	Category       string `json:"category"`
+	FromBudget     string `json:"from_budget"`
+	ToBudget       string `json:"to_budget"`
+	BudgetChange   string `json:"budget_change"`
+	FromSpending   string `json:"from_spending"`
+	ToSpending     string `json:"to_spending"`
+	SpendingChange string `json:"spending_change"`
+}

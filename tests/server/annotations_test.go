@@ -22,6 +22,7 @@ func TestToolAnnotationsDiscovery(t *testing.T) {
 		{name: "list_transactions", readOnly: true, openWorld: false},
 		{name: "get_monthly_summary", readOnly: true, openWorld: false},
 		{name: "get_category_summary", readOnly: true, openWorld: false},
+		{name: "compare_months", readOnly: true, openWorld: false},
 		{name: "create_monthly_budget", destructive: annotationBool(false), idempotent: true, openWorld: false},
 		{name: "create_category", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "disable_category", destructive: annotationBool(true), idempotent: true, openWorld: false},
