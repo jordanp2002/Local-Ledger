@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
@@ -171,6 +172,10 @@ func TestRemoveReturnsCanonicalRecordAndPreservesHistory(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO budgets (category_id, month, amount_hundredths) VALUES (?, ?, ?)`, groceries.ID, "2026-08", 50000); err != nil {
 		t.Fatalf("insert budget: %v", err)
 	}
+	before := snapshotMerchantRemovalState(t, ctx, db)
+	if len(before.Categories) != 2 || len(before.Budgets) != 1 || len(before.Transactions) != 1 {
+		t.Fatalf("removal fixture snapshot = %#v, want two categories, one budget, and one transaction", before)
+	}
 	inactiveRemoved, err := store.Remove(ctx, " shoppers ")
 	if err != nil {
 		t.Fatalf("Remove(inactive mapping) error = %v", err)
@@ -180,6 +185,7 @@ func TestRemoveReturnsCanonicalRecordAndPreservesHistory(t *testing.T) {
 	if inactiveRemoved != wantInactive || inactiveRemoved.CategoryActive {
 		t.Fatalf("Remove(inactive mapping) = %#v, want canonical inactive mapping %#v", inactiveRemoved, wantInactive)
 	}
+	assertMerchantRemovalStateUnchanged(t, ctx, db, before)
 
 	removed, err := store.Remove(ctx, " metro ")
 	if err != nil {
@@ -188,6 +194,7 @@ func TestRemoveReturnsCanonicalRecordAndPreservesHistory(t *testing.T) {
 	if removed != created.KnownMerchant {
 		t.Fatalf("Remove() = %#v, want pre-delete canonical %#v", removed, created.KnownMerchant)
 	}
+	assertMerchantRemovalStateUnchanged(t, ctx, db, before)
 	var count int64
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM known_merchants`).Scan(&count); err != nil {
 		t.Fatalf("count mappings: %v", err)
@@ -224,7 +231,7 @@ func TestRemoveReturnsCanonicalRecordAndPreservesHistory(t *testing.T) {
 func TestRemoveRollsBackOnDeleteFailure(t *testing.T) {
 	ctx := context.Background()
 	store, categories, db := openStores(t)
-	groceries := mustCreateCategory(t, ctx, categories, "Groceries")
+	mustCreateCategory(t, ctx, categories, "Groceries")
 	created, err := store.Set(ctx, "Metro", "Groceries")
 	if err != nil {
 		t.Fatalf("Set() error = %v", err)
@@ -244,8 +251,127 @@ func TestRemoveRollsBackOnDeleteFailure(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT id FROM known_merchants WHERE merchant = ?`, "Metro").Scan(&gotID); err != nil {
 		t.Fatalf("load mapping after rollback: %v", err)
 	}
-	if gotID != created.KnownMerchant.ID || groceries.ID == 0 {
+	if gotID != created.KnownMerchant.ID {
 		t.Fatalf("mapping id after rollback = %d, want %d", gotID, created.KnownMerchant.ID)
+	}
+}
+
+type merchantRemovalSnapshot struct {
+	Categories   []merchantCategorySnapshot
+	Budgets      []merchantBudgetSnapshot
+	Transactions []merchantTransactionSnapshot
+}
+
+type merchantCategorySnapshot struct {
+	ID        int64
+	Name      string
+	Active    int64
+	CreatedAt string
+	UpdatedAt string
+}
+
+type merchantBudgetSnapshot struct {
+	ID               int64
+	CategoryID       int64
+	Category         string
+	Month            string
+	AmountHundredths int64
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+type merchantTransactionSnapshot struct {
+	ID               int64
+	Merchant         string
+	AmountHundredths int64
+	Date             string
+	CategoryID       int64
+	Category         string
+	Note             sql.NullString
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+func snapshotMerchantRemovalState(t *testing.T, ctx context.Context, db *sql.DB) merchantRemovalSnapshot {
+	t.Helper()
+
+	snapshot := merchantRemovalSnapshot{}
+	categoryRows, err := db.QueryContext(ctx, `
+		SELECT id, name, active, created_at, updated_at
+		FROM categories
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		t.Fatalf("query category removal snapshot: %v", err)
+	}
+	defer categoryRows.Close()
+	for categoryRows.Next() {
+		var row merchantCategorySnapshot
+		if err := categoryRows.Scan(&row.ID, &row.Name, &row.Active, &row.CreatedAt, &row.UpdatedAt); err != nil {
+			t.Fatalf("scan category removal snapshot: %v", err)
+		}
+		snapshot.Categories = append(snapshot.Categories, row)
+	}
+	if err := categoryRows.Err(); err != nil {
+		t.Fatalf("iterate category removal snapshot: %v", err)
+	}
+
+	budgetRows, err := db.QueryContext(ctx, `
+		SELECT b.id, b.category_id, c.name, b.month, b.amount_hundredths, b.created_at, b.updated_at
+		FROM budgets AS b
+		INNER JOIN categories AS c ON c.id = b.category_id
+		ORDER BY b.id ASC
+	`)
+	if err != nil {
+		t.Fatalf("query budget removal snapshot: %v", err)
+	}
+	defer budgetRows.Close()
+	for budgetRows.Next() {
+		var row merchantBudgetSnapshot
+		if err := budgetRows.Scan(&row.ID, &row.CategoryID, &row.Category, &row.Month, &row.AmountHundredths, &row.CreatedAt, &row.UpdatedAt); err != nil {
+			t.Fatalf("scan budget removal snapshot: %v", err)
+		}
+		snapshot.Budgets = append(snapshot.Budgets, row)
+	}
+	if err := budgetRows.Err(); err != nil {
+		t.Fatalf("iterate budget removal snapshot: %v", err)
+	}
+
+	transactionRows, err := db.QueryContext(ctx, `
+		SELECT t.id, t.merchant, t.amount_hundredths, t.date, t.category_id, c.name, t.note, t.created_at, t.updated_at
+		FROM transactions AS t
+		INNER JOIN categories AS c ON c.id = t.category_id
+		ORDER BY t.id ASC
+	`)
+	if err != nil {
+		t.Fatalf("query transaction removal snapshot: %v", err)
+	}
+	defer transactionRows.Close()
+	for transactionRows.Next() {
+		var row merchantTransactionSnapshot
+		if err := transactionRows.Scan(&row.ID, &row.Merchant, &row.AmountHundredths, &row.Date, &row.CategoryID, &row.Category, &row.Note, &row.CreatedAt, &row.UpdatedAt); err != nil {
+			t.Fatalf("scan transaction removal snapshot: %v", err)
+		}
+		snapshot.Transactions = append(snapshot.Transactions, row)
+	}
+	if err := transactionRows.Err(); err != nil {
+		t.Fatalf("iterate transaction removal snapshot: %v", err)
+	}
+
+	return snapshot
+}
+
+func assertMerchantRemovalStateUnchanged(t *testing.T, ctx context.Context, db *sql.DB, before merchantRemovalSnapshot) {
+	t.Helper()
+	after := snapshotMerchantRemovalState(t, ctx, db)
+	if !reflect.DeepEqual(after.Categories, before.Categories) {
+		t.Fatalf("categories changed after merchant removal: before=%#v after=%#v", before.Categories, after.Categories)
+	}
+	if !reflect.DeepEqual(after.Budgets, before.Budgets) {
+		t.Fatalf("budgets changed after merchant removal: before=%#v after=%#v", before.Budgets, after.Budgets)
+	}
+	if !reflect.DeepEqual(after.Transactions, before.Transactions) {
+		t.Fatalf("transactions changed after merchant removal: before=%#v after=%#v", before.Transactions, after.Transactions)
 	}
 }
 

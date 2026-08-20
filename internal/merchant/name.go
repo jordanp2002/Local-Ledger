@@ -23,10 +23,6 @@ var (
 	ErrCategoryInactive    = errors.New("category inactive")
 	ErrNotFound            = errors.New("known merchant not found")
 	ErrAlreadyExists       = errors.New("known merchant already exists")
-	// These names make the merchant-specific errors explicit while retaining
-	// the short sentinel names used by the category store.
-	ErrMerchantNotFound      = ErrNotFound
-	ErrMerchantAlreadyExists = ErrAlreadyExists
 )
 
 // ValidationError contains format issues for a merchant operation.
