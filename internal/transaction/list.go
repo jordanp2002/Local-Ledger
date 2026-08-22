@@ -17,6 +17,7 @@ type ListInput struct {
 	StartDate *string
 	EndDate   *string
 	Category  *string
+	Merchant  *string
 	Limit     *int64
 	Offset    *int64
 }
@@ -30,6 +31,7 @@ type validatedList struct {
 	startDate *string
 	endDate   *string
 	category  *string
+	merchant  *string
 	limit     int64
 	offset    int64
 }
@@ -81,6 +83,14 @@ func validateList(in ListInput) (validatedList, []contract.FieldIssue) {
 			fields = append(fields, *issue)
 		} else {
 			validated.category = &category
+		}
+	}
+
+	if in.Merchant != nil {
+		if merchant, issue := validateMerchant(*in.Merchant); issue != nil {
+			fields = append(fields, *issue)
+		} else {
+			validated.merchant = &merchant
 		}
 	}
 
@@ -146,7 +156,7 @@ func (s *Store) list(ctx context.Context, in validatedList) (ListResult, []contr
 		categoryID = &category.ID
 	}
 
-	where, args := listFilter(in.startDate, in.endDate, categoryID)
+	where, args := listFilter(in.startDate, in.endDate, categoryID, in.merchant)
 
 	var total int64
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM transactions AS t`+where, args...).Scan(&total); err != nil {
@@ -196,9 +206,9 @@ func (s *Store) list(ctx context.Context, in validatedList) (ListResult, []contr
 	return result, nil, nil
 }
 
-func listFilter(startDate, endDate *string, categoryID *int64) (string, []any) {
-	clauses := make([]string, 0, 3)
-	args := make([]any, 0, 3)
+func listFilter(startDate, endDate *string, categoryID *int64, merchant *string) (string, []any) {
+	clauses := make([]string, 0, 4)
+	args := make([]any, 0, 4)
 	if startDate != nil {
 		clauses = append(clauses, "t.date >= ?")
 		args = append(args, *startDate)
@@ -210,6 +220,10 @@ func listFilter(startDate, endDate *string, categoryID *int64) (string, []any) {
 	if categoryID != nil {
 		clauses = append(clauses, "t.category_id = ?")
 		args = append(args, *categoryID)
+	}
+	if merchant != nil {
+		clauses = append(clauses, "t.merchant = ? COLLATE NOCASE")
+		args = append(args, *merchant)
 	}
 	if len(clauses) == 0 {
 		return "", nil

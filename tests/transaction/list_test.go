@@ -276,6 +276,142 @@ func TestListMissingCategoryIsNotFoundAndSkipsPageQuery(t *testing.T) {
 	})
 }
 
+func TestListMerchantExactMatchPreservesStoredSpelling(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	metro := addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "20.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "8.00", Merchant: "Cafe", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-13"),
+	})
+
+	result := mustList(t, ctx, store, transaction.ListInput{Merchant: stringPtr(" \tMetro \n")})
+	if !reflect.DeepEqual(transactionIDs(result.Transactions), []int64{metro.ID}) {
+		t.Fatalf("exact merchant IDs = %v, want only Metro", transactionIDs(result.Transactions))
+	}
+	if result.Transactions[0].Merchant != "Metro" {
+		t.Fatalf("returned merchant = %q, want stored Metro spelling", result.Transactions[0].Merchant)
+	}
+}
+
+func TestListMerchantMatchIsCaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	stored := addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "20.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+
+	result := mustList(t, ctx, store, transaction.ListInput{Merchant: stringPtr("metro")})
+	if result.Page.Total != 1 || result.Transactions[0].ID != stored.ID {
+		t.Fatalf("case-insensitive merchant list = %#v, want stored Metro row", result)
+	}
+	if result.Transactions[0].Merchant != "Metro" {
+		t.Fatalf("returned merchant = %q, want stored Metro spelling", result.Transactions[0].Merchant)
+	}
+}
+
+func TestListMerchantDoesNotSubstringMatch(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	metro := addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "20.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "12.00", Merchant: "Metro Grocery", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-13"),
+	})
+
+	result := mustList(t, ctx, store, transaction.ListInput{Merchant: stringPtr("Metro")})
+	if !reflect.DeepEqual(transactionIDs(result.Transactions), []int64{metro.ID}) {
+		t.Fatalf("merchant IDs = %v, want exact Metro only, not Metro Grocery", transactionIDs(result.Transactions))
+	}
+}
+
+func TestListMerchantCombinesWithCategoryAndDates(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 9, 15, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	createCategory(t, ctx, categories, "Dining")
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "10.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-07-31"),
+	})
+	inRange := addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "20.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "15.00", Merchant: "Metro", Category: stringPtr("Dining"), Date: stringPtr("2026-08-14"),
+	})
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "8.00", Merchant: "Cafe", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "9.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-09-01"),
+	})
+
+	result := mustList(t, ctx, store, transaction.ListInput{
+		StartDate: stringPtr("2026-08-01"),
+		EndDate:   stringPtr("2026-08-31"),
+		Category:  stringPtr("groceries"),
+		Merchant:  stringPtr("metro"),
+	})
+	if !reflect.DeepEqual(transactionIDs(result.Transactions), []int64{inRange.ID}) {
+		t.Fatalf("AND filter IDs = %v, want only August Groceries Metro", transactionIDs(result.Transactions))
+	}
+}
+
+func TestListUnknownMerchantReturnsEmptyPage(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "20.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+
+	result := mustList(t, ctx, store, transaction.ListInput{Merchant: stringPtr("Unknown Store")})
+	assertEmptyPage(t, result, 50, 0, 0)
+}
+
+func TestListMerchantPaginationTotalsCountOnlyMatches(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	createCategory(t, ctx, categories, "Dining")
+	var metroIDs []int64
+	for _, date := range []string{"2026-08-01", "2026-08-05", "2026-08-10"} {
+		metroIDs = append(metroIDs, addTransaction(t, ctx, store, transaction.AddInput{
+			Amount: "1.00", Merchant: "Metro", Category: stringPtr("Groceries"), Date: stringPtr(date),
+		}).ID)
+	}
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "2.00", Merchant: "Cafe", Category: stringPtr("Dining"), Date: stringPtr("2026-08-12"),
+	})
+	addTransaction(t, ctx, store, transaction.AddInput{
+		Amount: "2.00", Merchant: "Metro Grocery", Category: stringPtr("Groceries"), Date: stringPtr("2026-08-14"),
+	})
+
+	page := mustList(t, ctx, store, transaction.ListInput{
+		Merchant: stringPtr("metro"),
+		Limit:    int64Ptr(1),
+		Offset:   int64Ptr(0),
+	})
+	if page.Page != (contract.Page{Limit: 1, Offset: 0, Returned: 1, Total: 3, HasMore: true}) {
+		t.Fatalf("merchant first page = %#v, want total 3 not 5", page.Page)
+	}
+	if page.Transactions[0].ID != metroIDs[2] {
+		t.Fatalf("merchant first row = %d, want newest Metro %d", page.Transactions[0].ID, metroIDs[2])
+	}
+
+	empty := mustList(t, ctx, store, transaction.ListInput{
+		Merchant:  stringPtr("Metro"),
+		StartDate: stringPtr("2026-09-01"),
+		Limit:     int64Ptr(1),
+	})
+	assertEmptyPage(t, empty, 1, 0, 0)
+}
+
 func TestListAugustGroceriesExcludesDining(t *testing.T) {
 	ctx := context.Background()
 	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 9, 15, 12, 0))
