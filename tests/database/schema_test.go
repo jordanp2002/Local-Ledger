@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"budgets", "categories", "known_merchants", "transactions"}
+	wantTables := []string{"budgets", "categories", "known_merchants", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -74,6 +74,15 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if countNonConstraintIndexes(indexes["known_merchants"]) != 0 {
 		t.Fatalf("known_merchants has a speculative non-constraint index: %v", indexes["known_merchants"])
 	}
+	if countNonConstraintIndexes(indexes["transaction_imports"]) != 0 {
+		t.Fatalf("transaction_imports has a speculative non-constraint index: %v", indexes["transaction_imports"])
+	}
+	if countNonConstraintIndexes(indexes["transaction_import_items"]) != 0 {
+		t.Fatalf("transaction_import_items has a speculative non-constraint index: %v", indexes["transaction_import_items"])
+	}
+	if countNonConstraintIndexes(indexes["transaction_idempotency"]) != 0 {
+		t.Fatalf("transaction_idempotency has a speculative non-constraint index: %v", indexes["transaction_idempotency"])
+	}
 	for _, index := range indexes["categories"] {
 		if indexHasColumn(index, "active") {
 			t.Fatalf("categories has a separate active-category index: %q", index.name)
@@ -86,15 +95,26 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	}
 
 	wantForeignKeys := map[string]bool{
-		"categories":      false,
-		"budgets":         true,
-		"transactions":    true,
-		"known_merchants": true,
+		"categories":               false,
+		"budgets":                  true,
+		"transactions":             true,
+		"known_merchants":          true,
+		"transaction_imports":      false,
+		"transaction_import_items": true,
+		"transaction_idempotency":  true,
 	}
 	for _, table := range wantTables {
 		foreignKeys, err := schemaForeignKeys(ctx, db, table)
 		if err != nil {
 			t.Fatalf("query foreign keys for %s: %v", table, err)
+		}
+		if table == "transaction_import_items" {
+			assertImportItemForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "transaction_idempotency" {
+			assertIdempotencyForeignKeys(t, foreignKeys)
+			continue
 		}
 		if !wantForeignKeys[table] {
 			if len(foreignKeys) != 0 {
@@ -270,8 +290,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("reopened user_version = %d, want 1", version)
+	if version != 3 {
+		t.Fatalf("reopened user_version = %d, want 3", version)
 	}
 
 	var categoryName string
@@ -478,6 +498,45 @@ func schemaForeignKeys(ctx context.Context, db *sql.DB, table string) ([]schemaF
 		return nil, err
 	}
 	return foreignKeys, nil
+}
+
+func assertImportItemForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 2 {
+		t.Fatalf("transaction_import_items foreign keys = %v, want 2", foreignKeys)
+	}
+	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
+	for _, foreignKey := range foreignKeys {
+		byFrom[foreignKey.from] = foreignKey
+	}
+	importFK, ok := byFrom["import_id"]
+	if !ok || importFK.table != "transaction_imports" || importFK.to != "id" {
+		t.Fatalf("import_id foreign key = %v, want transaction_imports(id)", importFK)
+	}
+	if importFK.onDelete != "RESTRICT" && importFK.onDelete != "NO ACTION" {
+		t.Fatalf("import_id delete action = %q, want RESTRICT or NO ACTION", importFK.onDelete)
+	}
+	txnFK, ok := byFrom["transaction_id"]
+	if !ok || txnFK.table != "transactions" || txnFK.to != "id" {
+		t.Fatalf("transaction_id foreign key = %v, want transactions(id)", txnFK)
+	}
+	if txnFK.onDelete != "SET NULL" {
+		t.Fatalf("transaction_id delete action = %q, want SET NULL", txnFK.onDelete)
+	}
+}
+
+func assertIdempotencyForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 1 {
+		t.Fatalf("transaction_idempotency foreign keys = %v, want 1", foreignKeys)
+	}
+	foreignKey := foreignKeys[0]
+	if foreignKey.table != "transactions" || foreignKey.from != "transaction_id" || foreignKey.to != "id" {
+		t.Fatalf("transaction_idempotency foreign key = %v, want transaction_id -> transactions(id)", foreignKey)
+	}
+	if foreignKey.onDelete != "SET NULL" {
+		t.Fatalf("transaction_idempotency delete action = %q, want SET NULL", foreignKey.onDelete)
+	}
 }
 
 func quotePragmaArgument(value string) string {

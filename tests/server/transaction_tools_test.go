@@ -24,8 +24,8 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 17 {
-		t.Fatalf("tool count = %d, want 17", len(result.Tools))
+	if len(result.Tools) != 18 {
+		t.Fatalf("tool count = %d, want 18", len(result.Tools))
 	}
 
 	var tool *mcp.Tool
@@ -46,11 +46,11 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	if !containsValue(required, "amount") || !containsValue(required, "merchant") {
 		t.Fatalf("required = %v, want amount and merchant", required)
 	}
-	if containsValue(required, "category") || containsValue(required, "date") || containsValue(required, "note") {
-		t.Fatalf("required = %v, want category, date, and note optional", required)
+	if containsValue(required, "category") || containsValue(required, "date") || containsValue(required, "note") || containsValue(required, "idempotency_key") {
+		t.Fatalf("required = %v, want category, date, note, and idempotency_key optional", required)
 	}
 	properties, _ := schema["properties"].(map[string]any)
-	for _, field := range []string{"amount", "merchant", "category", "date", "note"} {
+	for _, field := range []string{"amount", "merchant", "category", "date", "note", "idempotency_key"} {
 		property, _ := properties[field].(map[string]any)
 		if property == nil || !schemaTypeContains(property["type"], "string") {
 			t.Fatalf("%s schema = %#v, want string", field, properties[field])
@@ -73,7 +73,7 @@ func TestAddTransactionMappingActions(t *testing.T) {
 			t.Fatalf("add_transaction created failed: %s", structuredJSON(t, result))
 		}
 		got := structuredObject(t, result)
-		if keys := objectKeys(got); strings.Join(keys, ",") != "category_source,merchant_mapping_action,ok,transaction" {
+		if keys := objectKeys(got); strings.Join(keys, ",") != "category_source,idempotent_replay,merchant_mapping_action,ok,transaction" {
 			t.Fatalf("add_transaction keys = %v", keys)
 		}
 		if got["ok"] != true || got["category_source"] != "provided" || got["merchant_mapping_action"] != "created" {
@@ -455,8 +455,8 @@ func TestUpdateRemoveTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 17 {
-		t.Fatalf("tool count = %d, want 17", len(result.Tools))
+	if len(result.Tools) != 18 {
+		t.Fatalf("tool count = %d, want 18", len(result.Tools))
 	}
 
 	updateTool := toolByName(t, result.Tools, "update_transaction")
@@ -951,8 +951,8 @@ func TestListTransactionsToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 17 {
-		t.Fatalf("tool count = %d, want 17", len(result.Tools))
+	if len(result.Tools) != 18 {
+		t.Fatalf("tool count = %d, want 18", len(result.Tools))
 	}
 
 	tool := toolByName(t, result.Tools, "list_transactions")

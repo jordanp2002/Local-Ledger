@@ -32,11 +32,12 @@ const (
 
 // AddInput is one add_transaction request at the store boundary.
 type AddInput struct {
-	Amount   string
-	Merchant string
-	Category *string
-	Date     *string
-	Note     *string
+	Amount         string
+	Merchant       string
+	Category       *string
+	Date           *string
+	Note           *string
+	IdempotencyKey *string
 }
 
 // AddResult is the canonical result of recording one transaction.
@@ -44,20 +45,14 @@ type AddResult struct {
 	Transaction           contract.Transaction
 	CategorySource        string
 	MerchantMappingAction string
+	IdempotentReplay      bool
 }
 
-// NotePatch is the three-state note field for Update.
-// The zero value (Present=false) leaves the stored note unchanged.
-// Present with a nil Value clears the note to SQL NULL.
 type NotePatch struct {
 	Present bool
 	Value   *string // Present+nil = clear note
 }
 
-// UpdateInput is one update_transaction request at the store boundary.
-// Nil pointers are omitted fields. Explicit JSON null on a non-nullable
-// patch field is signaled by the matching *Null flag so validation can
-// collect every semantic issue in field order.
 type UpdateInput struct {
 	ID           int64
 	Amount       *string
@@ -171,7 +166,10 @@ type validatedAdd struct {
 	merchant         string
 	category         *string
 	date             string
+	dateOmitted      bool
 	note             sql.NullString
+	idempotencyKey   string
+	fingerprint      string
 }
 
 // LocalDate formats YYYY-MM-DD in t's location without converting to UTC first.
@@ -189,6 +187,13 @@ func (s *Store) Add(ctx context.Context, in AddInput) (AddResult, []contract.Fie
 	validated, fields := validateAdd(in, now)
 	if len(fields) != 0 {
 		return AddResult{}, fields, nil
+	}
+	if validated.idempotencyKey != "" {
+		fingerprint, err := fingerprintAdd(validated)
+		if err != nil {
+			return AddResult{}, nil, err
+		}
+		validated.fingerprint = fingerprint
 	}
 	if s == nil || s.DB == nil {
 		return AddResult{}, nil, errors.New("transaction store database is nil")
@@ -229,6 +234,7 @@ func validateAdd(in AddInput, now time.Time) (validatedAdd, []contract.FieldIssu
 		}
 	} else {
 		validated.date = today
+		validated.dateOmitted = true
 	}
 
 	if in.Note != nil {
@@ -236,6 +242,14 @@ func validateAdd(in AddInput, now time.Time) (validatedAdd, []contract.FieldIssu
 			fields = append(fields, *issue)
 		} else {
 			validated.note = note
+		}
+	}
+
+	if in.IdempotencyKey != nil {
+		if key, issue := validateIdempotencyKey(*in.IdempotencyKey); issue != nil {
+			fields = append(fields, *issue)
+		} else {
+			validated.idempotencyKey = key
 		}
 	}
 
@@ -333,18 +347,37 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	result, err := addInTx(ctx, tx, in)
+	if isUniqueConstraintOn(err, "transaction_idempotency") {
+		_ = tx.Rollback()
+		replay, replayErr := replayIdempotency(ctx, s.DB, in.idempotencyKey, in.fingerprint)
+		if replayErr != nil {
+			return AddResult{}, nil, replayErr
+		}
+		return replay, nil, nil
+	}
+	if err != nil {
+		return AddResult{}, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AddResult{}, nil, err
+	}
+	return result, nil, nil
+}
+
+func addValidatedInTx(ctx context.Context, tx *sql.Tx, in validatedAdd) (AddResult, error) {
 	var supplied *contract.Category
 	if in.category != nil {
 		category, err := resolveActiveCategory(ctx, tx, *in.category)
 		if err != nil {
-			return AddResult{}, nil, err
+			return AddResult{}, err
 		}
 		supplied = &category
 	}
 
 	mapping, found, err := lookupKnownMerchant(ctx, tx, in.merchant)
 	if err != nil {
-		return AddResult{}, nil, err
+		return AddResult{}, err
 	}
 
 	var (
@@ -355,14 +388,14 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 	if supplied == nil {
 		categorySource = CategorySourceKnownMerchant
 		if !found {
-			return AddResult{}, nil, &MerchantCategoryRequiredError{Merchant: in.merchant}
+			return AddResult{}, &MerchantCategoryRequiredError{Merchant: in.merchant}
 		}
 		if !mapping.CategoryActive {
 			activeCategories, err := listActiveCategories(ctx, tx)
 			if err != nil {
-				return AddResult{}, nil, err
+				return AddResult{}, err
 			}
-			return AddResult{}, nil, &MerchantCategoryInactiveError{
+			return AddResult{}, &MerchantCategoryInactiveError{
 				KnownMerchant:    mapping,
 				ActiveCategories: activeCategories,
 			}
@@ -389,11 +422,11 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 		VALUES (?, ?, ?, ?, ?)
 	`, in.merchant, in.amountHundredths, in.date, categoryID, in.note)
 	if err != nil {
-		return AddResult{}, nil, err
+		return AddResult{}, err
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
-		return AddResult{}, nil, err
+		return AddResult{}, err
 	}
 
 	switch mappingAction {
@@ -402,7 +435,7 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 			INSERT INTO known_merchants (merchant, category_id)
 			VALUES (?, ?)
 		`, in.merchant, categoryID); err != nil {
-			return AddResult{}, nil, err
+			return AddResult{}, err
 		}
 	case MappingActionReplacedInactive:
 		if _, err := tx.ExecContext(ctx, `
@@ -411,22 +444,19 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 			    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 			WHERE id = ?
 		`, categoryID, mapping.ID); err != nil {
-			return AddResult{}, nil, err
+			return AddResult{}, err
 		}
 	}
 
 	recorded, err := getTransactionByID(ctx, tx, id)
 	if err != nil {
-		return AddResult{}, nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return AddResult{}, nil, err
+		return AddResult{}, err
 	}
 	return AddResult{
 		Transaction:           recorded,
 		CategorySource:        categorySource,
 		MerchantMappingAction: mappingAction,
-	}, nil, nil
+	}, nil
 }
 
 const categoryColumns = `id, name, active, created_at, updated_at`

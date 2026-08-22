@@ -33,6 +33,7 @@ func TestToolAnnotationsDiscovery(t *testing.T) {
 		{name: "remove_transaction", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "set_budgets", destructive: annotationBool(true), openWorld: false},
 		{name: "add_transaction", destructive: annotationBool(true), openWorld: false},
+		{name: "add_transactions", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "update_transaction", destructive: annotationBool(true), openWorld: false},
 	}
 

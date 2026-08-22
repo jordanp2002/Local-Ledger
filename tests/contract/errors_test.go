@@ -28,6 +28,7 @@ func TestErrorCodesMatchApprovedContract(t *testing.T) {
 		{name: "monthly budget not found", code: contract.ErrorCodeMonthlyBudgetNotFound, want: "monthly_budget_not_found"},
 		{name: "budget source not found", code: contract.ErrorCodeBudgetSourceNotFound, want: "budget_source_not_found"},
 		{name: "budget source empty", code: contract.ErrorCodeBudgetSourceEmpty, want: "budget_source_empty"},
+		{name: "idempotency conflict", code: contract.ErrorCodeIdempotencyConflict, want: "idempotency_conflict"},
 		{name: "internal error", code: contract.ErrorCodeInternalError, want: "internal_error"},
 	}
 
