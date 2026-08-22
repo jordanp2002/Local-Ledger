@@ -22,6 +22,7 @@ func TestToolAnnotationsDiscovery(t *testing.T) {
 		{name: "list_top_merchants", readOnly: true, openWorld: false},
 		{name: "list_transactions", readOnly: true, openWorld: false},
 		{name: "get_monthly_summary", readOnly: true, openWorld: false},
+		{name: "get_monthly_series", readOnly: true, openWorld: false},
 		{name: "get_category_summary", readOnly: true, openWorld: false},
 		{name: "get_spending_summary", readOnly: true, openWorld: false},
 		{name: "compare_months", readOnly: true, openWorld: false},

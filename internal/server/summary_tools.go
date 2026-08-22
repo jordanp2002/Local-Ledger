@@ -55,6 +55,29 @@ type compareMonthsOutput struct {
 	Categories []contract.ComparisonCategory `json:"categories"`
 }
 
+type monthlySeriesInput struct {
+	FromMonth string  `json:"from_month"`
+	ToMonth   string  `json:"to_month"`
+	Category  *string `json:"category,omitempty"`
+}
+
+type monthlySeriesOutput struct {
+	OK        bool                       `json:"ok"`
+	FromMonth string                     `json:"from_month"`
+	ToMonth   string                     `json:"to_month"`
+	Category  *string                    `json:"category"`
+	Months    []monthlySeriesMonthOutput `json:"months"`
+}
+
+type monthlySeriesMonthOutput struct {
+	Month            string  `json:"month"`
+	TotalBudget      *string `json:"total_budget"`
+	TotalSpending    string  `json:"total_spending"`
+	Remaining        *string `json:"remaining"`
+	SpentOfBudget    *string `json:"spent_of_budget"`
+	TransactionCount int64   `json:"transaction_count"`
+}
+
 type spendingSummaryInput struct {
 	StartDate *string `json:"start_date,omitempty"`
 	EndDate   *string `json:"end_date,omitempty"`
@@ -118,6 +141,12 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 		Description: "Compare two stored monthly budget snapshots and their spending.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.compareMonths)
+
+	mcp.AddTool[monthlySeriesInput, any](srv, &mcp.Tool{
+		Name:        "get_monthly_series",
+		Description: "Return contiguous monthly spending and budget rows over an inclusive month range.",
+		Annotations: readOnlyToolAnnotations(),
+	}, tools.getMonthlySeries)
 
 	mcp.AddTool[spendingSummaryInput, any](srv, &mcp.Tool{
 		Name:        "get_spending_summary",
@@ -197,6 +226,39 @@ func (t *summaryTools) compareMonths(ctx context.Context, _ *mcp.CallToolRequest
 		To:         result.To,
 		Change:     result.Change,
 		Categories: categories,
+	})
+}
+
+func (t *summaryTools) getMonthlySeries(ctx context.Context, _ *mcp.CallToolRequest, in monthlySeriesInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.Series(ctx, summary.SeriesInput{
+		FromMonth: in.FromMonth,
+		ToMonth:   in.ToMonth,
+		Category:  in.Category,
+	})
+	if len(fields) != 0 {
+		return toolError(invalidSummaryInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapSummaryError("get_monthly_series", err)
+	}
+
+	months := make([]monthlySeriesMonthOutput, 0, len(result.Months))
+	for _, month := range result.Months {
+		months = append(months, monthlySeriesMonthOutput{
+			Month:            month.Month,
+			TotalBudget:      month.TotalBudget,
+			TotalSpending:    month.TotalSpending,
+			Remaining:        month.Remaining,
+			SpentOfBudget:    month.SpentOfBudget,
+			TransactionCount: month.TransactionCount,
+		})
+	}
+	return toolOK(monthlySeriesOutput{
+		OK:        true,
+		FromMonth: result.FromMonth,
+		ToMonth:   result.ToMonth,
+		Category:  result.Category,
+		Months:    months,
 	})
 }
 
