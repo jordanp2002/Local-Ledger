@@ -62,6 +62,10 @@ func (s *Store) category(ctx context.Context, categoryName, month string) (contr
 	if err != nil {
 		return contract.CategorySummary{}, nil, err
 	}
+	spent, err := SpentOfBudget(spending, budget)
+	if err != nil {
+		return contract.CategorySummary{}, nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return contract.CategorySummary{}, nil, err
@@ -73,6 +77,7 @@ func (s *Store) category(ctx context.Context, categoryName, month string) (contr
 		Budget:           formattedBudget,
 		TotalSpending:    formattedSpending,
 		Remaining:        remaining,
+		SpentOfBudget:    spent,
 		TransactionCount: count,
 	}, nil, nil
 }

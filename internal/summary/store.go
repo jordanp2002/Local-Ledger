@@ -23,6 +23,7 @@ type MonthlyResult struct {
 	TotalBudget   string
 	TotalSpending string
 	Remaining     string
+	SpentOfBudget *string
 	Categories    []contract.MonthlySummaryCategory
 }
 
@@ -173,10 +174,35 @@ func checkedSubtract(left, right int64) (int64, bool) {
 	return left - right, true
 }
 
+func checkedMultiply(left, right int64) (int64, bool) {
+	if left < 0 || right < 0 {
+		return 0, false
+	}
+	if left != 0 && right > math.MaxInt64/left {
+		return 0, false
+	}
+	return left * right, true
+}
+
 func formatRemaining(budget, spending int64) (string, error) {
 	remaining, ok := checkedSubtract(budget, spending)
 	if !ok {
 		return "", fmtOverflow("remaining")
 	}
 	return contract.FormatSignedAmount(remaining)
+}
+
+func SpentOfBudget(spendingHundredths, budgetHundredths int64) (*string, error) {
+	if budgetHundredths == 0 {
+		return nil, nil
+	}
+	product, ok := checkedMultiply(spendingHundredths, 10000)
+	if !ok {
+		return nil, fmtOverflow("spent of budget")
+	}
+	formatted, err := contract.FormatAmount(product / budgetHundredths)
+	if err != nil {
+		return nil, err
+	}
+	return &formatted, nil
 }

@@ -208,7 +208,7 @@ func TestStdioLifecycle(t *testing.T) {
 		t.Fatalf("get_monthly_summary IsError = true, want success: %#v", monthly)
 	}
 	monthlyPayload := structuredObject(t, monthly)
-	if keys := objectKeys(monthlyPayload); strings.Join(keys, ",") != "categories,month,ok,remaining,total_budget,total_spending" {
+	if keys := objectKeys(monthlyPayload); strings.Join(keys, ",") != "categories,month,ok,remaining,spent_of_budget,total_budget,total_spending" {
 		t.Fatalf("get_monthly_summary keys = %v", keys)
 	}
 	if monthlyPayload["ok"] != true || monthlyPayload["month"] != month || monthlyPayload["total_budget"] != "300.00" {
@@ -234,7 +234,7 @@ func TestStdioLifecycle(t *testing.T) {
 		t.Fatalf("get_category_summary IsError = true, want success: %#v", categorySummary)
 	}
 	categoryPayload := structuredObject(t, categorySummary)
-	if keys := objectKeys(categoryPayload); strings.Join(keys, ",") != "budget,category,category_id,month,ok,remaining,total_spending,transaction_count" {
+	if keys := objectKeys(categoryPayload); strings.Join(keys, ",") != "budget,category,category_id,month,ok,remaining,spent_of_budget,total_spending,transaction_count" {
 		t.Fatalf("get_category_summary keys = %v", keys)
 	}
 	if categoryPayload["ok"] != true || categoryPayload["month"] != month || categoryPayload["category"] != "Groceries" || categoryPayload["budget"] != "300.00" {

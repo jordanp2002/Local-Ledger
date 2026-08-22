@@ -21,6 +21,7 @@ type monthlySummaryOutput struct {
 	TotalBudget   string                            `json:"total_budget"`
 	TotalSpending string                            `json:"total_spending"`
 	Remaining     string                            `json:"remaining"`
+	SpentOfBudget *string                           `json:"spent_of_budget"`
 	Categories    []contract.MonthlySummaryCategory `json:"categories"`
 }
 
@@ -30,14 +31,15 @@ type categorySummaryInput struct {
 }
 
 type categorySummaryOutput struct {
-	OK               bool   `json:"ok"`
-	CategoryID       int64  `json:"category_id"`
-	Category         string `json:"category"`
-	Month            string `json:"month"`
-	Budget           string `json:"budget"`
-	TotalSpending    string `json:"total_spending"`
-	Remaining        string `json:"remaining"`
-	TransactionCount int64  `json:"transaction_count"`
+	OK               bool    `json:"ok"`
+	CategoryID       int64   `json:"category_id"`
+	Category         string  `json:"category"`
+	Month            string  `json:"month"`
+	Budget           string  `json:"budget"`
+	TotalSpending    string  `json:"total_spending"`
+	Remaining        string  `json:"remaining"`
+	SpentOfBudget    *string `json:"spent_of_budget"`
+	TransactionCount int64   `json:"transaction_count"`
 }
 
 type compareMonthsInput struct {
@@ -123,6 +125,7 @@ func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolReq
 		TotalBudget:   result.TotalBudget,
 		TotalSpending: result.TotalSpending,
 		Remaining:     result.Remaining,
+		SpentOfBudget: result.SpentOfBudget,
 		Categories:    categories,
 	})
 }
@@ -144,6 +147,7 @@ func (t *summaryTools) getCategorySummary(ctx context.Context, _ *mcp.CallToolRe
 		Budget:           result.Budget,
 		TotalSpending:    result.TotalSpending,
 		Remaining:        result.Remaining,
+		SpentOfBudget:    result.SpentOfBudget,
 		TransactionCount: result.TransactionCount,
 	})
 }
