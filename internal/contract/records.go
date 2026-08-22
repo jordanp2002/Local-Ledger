@@ -89,3 +89,10 @@ type ComparisonCategory struct {
 	ToSpending     string `json:"to_spending"`
 	SpendingChange string `json:"spending_change"`
 }
+
+type SpendingSummaryCategory struct {
+	CategoryID       int64  `json:"category_id"`
+	Category         string `json:"category"`
+	Spending         string `json:"spending"`
+	TransactionCount int64  `json:"transaction_count"`
+}

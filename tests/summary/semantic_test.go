@@ -68,6 +68,84 @@ func TestCategoryEmptyAndNULNamesAreInvalidInput(t *testing.T) {
 	}
 }
 
+func TestSpendingSemanticIssuesUseStableFieldOrder(t *testing.T) {
+	ctx := context.Background()
+	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	before := loadSnapshot(t, ctx, fx.db)
+
+	_, fields, err := fx.summary.Spending(ctx, summary.SpendingInput{
+		StartDate: stringPtr("2026-8-31"),
+		EndDate:   stringPtr("2026/08/01"),
+		Category:  stringPtr(" "),
+		Merchant:  stringPtr(" \t "),
+	})
+	if err != nil {
+		t.Fatalf("Spending() error = %v, want semantic issues", err)
+	}
+	want := []contract.FieldIssue{
+		{Field: "start_date", Reason: "must be a valid YYYY-MM-DD date"},
+		{Field: "end_date", Reason: "must be a valid YYYY-MM-DD date"},
+		{Field: "category", Reason: "must not be empty"},
+		{Field: "merchant", Reason: "must not be empty"},
+	}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("fields = %#v, want %#v", fields, want)
+	}
+	assertUnchanged(t, ctx, fx.db, before)
+}
+
+func TestSpendingReversedRangeAndMalformedDates(t *testing.T) {
+	ctx := context.Background()
+	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+
+	_, fields, err := fx.summary.Spending(ctx, summary.SpendingInput{
+		StartDate: stringPtr("2026-08-31"),
+		EndDate:   stringPtr("2026-08-01"),
+	})
+	if err != nil {
+		t.Fatalf("reversed error = %v, want semantic issue", err)
+	}
+	if !reflect.DeepEqual(fields, []contract.FieldIssue{{Field: "end_date", Reason: "must be on or after start_date"}}) {
+		t.Fatalf("reversed fields = %#v", fields)
+	}
+
+	_, fields, err = fx.summary.Spending(ctx, summary.SpendingInput{
+		StartDate: stringPtr(" 2026-08-01"),
+		EndDate:   stringPtr("2026-8-31"),
+	})
+	if err != nil {
+		t.Fatalf("malformed error = %v, want semantic issues", err)
+	}
+	want := []contract.FieldIssue{
+		{Field: "start_date", Reason: "must be a valid YYYY-MM-DD date"},
+		{Field: "end_date", Reason: "must be a valid YYYY-MM-DD date"},
+	}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("malformed fields = %#v, want %#v", fields, want)
+	}
+}
+
+func TestSpendingEmptyAndNULMerchantAreInvalidInput(t *testing.T) {
+	ctx := context.Background()
+	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+
+	_, emptyFields, err := fx.summary.Spending(ctx, summary.SpendingInput{Merchant: stringPtr("   ")})
+	if err != nil {
+		t.Fatalf("empty merchant error = %v", err)
+	}
+	if !reflect.DeepEqual(emptyFields, []contract.FieldIssue{{Field: "merchant", Reason: "must not be empty"}}) {
+		t.Fatalf("empty fields = %#v", emptyFields)
+	}
+
+	_, nulFields, err := fx.summary.Spending(ctx, summary.SpendingInput{Merchant: stringPtr("Metro\x00")})
+	if err != nil {
+		t.Fatalf("NUL merchant error = %v", err)
+	}
+	if !reflect.DeepEqual(nulFields, []contract.FieldIssue{{Field: "merchant", Reason: "must not contain NUL characters"}}) {
+		t.Fatalf("NUL fields = %#v", nulFields)
+	}
+}
+
 func TestPastAndFutureMonthsAreNotSemanticErrors(t *testing.T) {
 	ctx := context.Background()
 	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 15, 12, 0))

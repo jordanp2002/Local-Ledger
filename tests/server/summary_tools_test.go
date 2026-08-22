@@ -21,8 +21,8 @@ func TestSummaryToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 18 {
-		t.Fatalf("tool count = %d, want 18", len(result.Tools))
+	if len(result.Tools) != 19 {
+		t.Fatalf("tool count = %d, want 19", len(result.Tools))
 	}
 
 	monthly := toolByName(t, result.Tools, "get_monthly_summary")
@@ -57,6 +57,23 @@ func TestSummaryToolDiscovery(t *testing.T) {
 		fieldSchema, _ := compareProperties[field].(map[string]any)
 		if fieldSchema["type"] != "string" {
 			t.Fatalf("compare_months %s schema = %#v, want string", field, compareProperties[field])
+		}
+	}
+
+	spending := toolByName(t, result.Tools, "get_spending_summary")
+	spendingSchema := schemaObject(t, spending.InputSchema)
+	if spendingSchema["type"] != "object" {
+		t.Fatalf("get_spending_summary input schema type = %v, want object", spendingSchema["type"])
+	}
+	spendingRequired, _ := spendingSchema["required"].([]any)
+	if len(spendingRequired) != 0 {
+		t.Fatalf("get_spending_summary required = %v, want no required fields", spendingRequired)
+	}
+	spendingProperties, _ := spendingSchema["properties"].(map[string]any)
+	for _, field := range []string{"start_date", "end_date", "category", "merchant"} {
+		property, _ := spendingProperties[field].(map[string]any)
+		if property == nil || !schemaTypeContains(property["type"], "string") {
+			t.Fatalf("get_spending_summary %s schema = %#v, want string", field, spendingProperties[field])
 		}
 	}
 }
@@ -348,6 +365,140 @@ func TestGetCategorySummaryInactiveIsSuccess(t *testing.T) {
 	rows := monthlyCategories(t, structuredObject(t, monthly))
 	if len(rows) != 2 || rows[0]["category"] != "Dining" || rows[0]["budget"] != "0.00" {
 		t.Fatalf("monthly after disable = %#v", rows)
+	}
+}
+
+func TestGetSpendingSummarySuccess(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+	dining := createCategoryForMerchantTest(t, session, "Dining")
+	groceries := createCategoryForMerchantTest(t, session, "Groceries")
+	addTestTransaction(t, session, map[string]any{
+		"amount": "1.00", "merchant": "Jul", "category": "Groceries", "date": "2026-07-31",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "20.00", "merchant": "Metro", "category": "Groceries", "date": "2026-08-14",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "15.00", "merchant": "Cafe", "category": "Dining", "date": "2026-08-14",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "12.00", "merchant": "Metro Grocery", "category": "Groceries", "date": "2026-08-13",
+	})
+
+	allTime := callTool(t, session, "get_spending_summary", map[string]any{})
+	if allTime.IsError {
+		t.Fatalf("all-time spending failed: %s", structuredJSON(t, allTime))
+	}
+	got := structuredObject(t, allTime)
+	if keys := objectKeys(got); strings.Join(keys, ",") != "categories,category,end_date,merchant,ok,start_date,total_spending,transaction_count" {
+		t.Fatalf("keys = %v", keys)
+	}
+	if got["ok"] != true || got["total_spending"] != "48.00" || got["transaction_count"] != float64(4) {
+		t.Fatalf("all-time totals = %s", structuredJSON(t, allTime))
+	}
+	if got["start_date"] != nil || got["end_date"] != nil || got["category"] != nil || got["merchant"] != nil {
+		t.Fatalf("omitted filters = %s, want nulls", structuredJSON(t, allTime))
+	}
+	rows := monthlyCategories(t, got)
+	if len(rows) != 2 || rows[0]["category"] != "Dining" || rows[0]["category_id"] != float64(dining.ID) || rows[0]["spending"] != "15.00" {
+		t.Fatalf("all-time rows = %#v, want Dining then Groceries", rows)
+	}
+	if rows[1]["category"] != "Groceries" || rows[1]["category_id"] != float64(groceries.ID) || rows[1]["spending"] != "33.00" || rows[1]["transaction_count"] != float64(3) {
+		t.Fatalf("Groceries row = %#v", rows[1])
+	}
+
+	filtered := callTool(t, session, "get_spending_summary", map[string]any{
+		"start_date": "2026-08-01",
+		"end_date":   "2026-08-31",
+		"category":   "groceries",
+		"merchant":   "metro",
+	})
+	if filtered.IsError {
+		t.Fatalf("filtered spending failed: %s", structuredJSON(t, filtered))
+	}
+	filteredGot := structuredObject(t, filtered)
+	if filteredGot["ok"] != true || filteredGot["total_spending"] != "20.00" || filteredGot["transaction_count"] != float64(1) {
+		t.Fatalf("filtered totals = %s", structuredJSON(t, filtered))
+	}
+	if filteredGot["start_date"] != "2026-08-01" || filteredGot["end_date"] != "2026-08-31" || filteredGot["category"] != "Groceries" || filteredGot["merchant"] != "metro" {
+		t.Fatalf("echoed filters = %s", structuredJSON(t, filtered))
+	}
+	filteredRows := monthlyCategories(t, filteredGot)
+	if len(filteredRows) != 1 || filteredRows[0]["category"] != "Groceries" || filteredRows[0]["spending"] != "20.00" {
+		t.Fatalf("filtered rows = %#v, want exact Metro Groceries", filteredRows)
+	}
+
+	empty := callTool(t, session, "get_spending_summary", map[string]any{"merchant": "Unknown Store"})
+	if empty.IsError {
+		t.Fatalf("unknown merchant IsError = true, want success: %s", structuredJSON(t, empty))
+	}
+	emptyGot := structuredObject(t, empty)
+	if emptyGot["total_spending"] != "0.00" || emptyGot["transaction_count"] != float64(0) || emptyGot["merchant"] != "Unknown Store" {
+		t.Fatalf("unknown merchant = %s, want zeros", structuredJSON(t, empty))
+	}
+	emptyRows, ok := emptyGot["categories"].([]any)
+	if !ok || emptyRows == nil || len(emptyRows) != 0 {
+		t.Fatalf("unknown merchant categories = %#v, want []", emptyGot["categories"])
+	}
+}
+
+func TestGetSpendingSummaryInvalidInputAndMissingCategory(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+	groceries := createCategoryForMerchantTest(t, session, "Groceries")
+
+	invalid := callTool(t, session, "get_spending_summary", map[string]any{
+		"start_date": "2026-08-31",
+		"end_date":   "2026-08-01",
+		"merchant":   "   ",
+	})
+	if !invalid.IsError {
+		t.Fatal("invalid spending IsError = false, want true")
+	}
+	requireStructuredEqual(t, invalid, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeInvalidInput,
+		"",
+		false,
+		map[string]any{
+			"fields": []contract.FieldIssue{
+				{Field: "end_date", Reason: "must be on or after start_date"},
+				{Field: "merchant", Reason: "must not be empty"},
+			},
+		},
+	)))
+
+	missing := callTool(t, session, "get_spending_summary", map[string]any{"category": "  Pharmacy  "})
+	if !missing.IsError {
+		t.Fatal("category_not_found IsError = false, want true")
+	}
+	requireStructuredEqual(t, missing, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeCategoryNotFound,
+		"Category 'Pharmacy' does not exist.",
+		false,
+		map[string]any{
+			"requested_category": "Pharmacy",
+			"categories":         []contract.Category{groceries},
+		},
+	)))
+}
+
+func TestGetSpendingSummaryInternalError(t *testing.T) {
+	db := openCategoryDB(t)
+	var logs bytes.Buffer
+	session := connectCategorySession(t, db, fixedBudgetNow, log.New(&logs, "", 0))
+	if err := db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+
+	result := callTool(t, session, "get_spending_summary", map[string]any{})
+	if !result.IsError {
+		t.Fatal("internal get_spending_summary IsError = false, want true")
+	}
+	requireStructuredEqual(t, result, contract.NewInternalErrorEnvelope())
+	if leakedInternalError(structuredJSON(t, result)) || leakedInternalError(toolText(result)) {
+		t.Fatalf("public payload leaked internal details: %s", structuredJSON(t, result))
+	}
+	if logs.Len() == 0 {
+		t.Fatal("logger did not record the private cause")
 	}
 }
 

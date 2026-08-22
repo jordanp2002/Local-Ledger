@@ -138,6 +138,24 @@ func validateCategoryName(value string) (string, *contract.FieldIssue) {
 	}
 }
 
+func validateMerchant(value string) (string, *contract.FieldIssue) {
+	merchant := contract.TrimASCIIWhitespace(value)
+	switch {
+	case merchant == "":
+		return "", &contract.FieldIssue{
+			Field:  "merchant",
+			Reason: "must not be empty",
+		}
+	case strings.ContainsRune(merchant, '\x00'):
+		return "", &contract.FieldIssue{
+			Field:  "merchant",
+			Reason: "must not contain NUL characters",
+		}
+	default:
+		return merchant, nil
+	}
+}
+
 func checkedAdd(left, right int64) (int64, bool) {
 	if left < 0 || right < 0 || right > math.MaxInt64-left {
 		return 0, false
