@@ -13,12 +13,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const addTransactionsDescription = "Atomically record a confirmed batch of structured expenses using exact merchant-default rules. Submit only user-confirmed expense rows — not images, files, credits, payments, pending transactions, or unreadable lines. Resolve every uncategorized merchant with the user before calling. Each row requires amount, merchant, and a YYYY-MM-DD date; dates are never defaulted to today. The first occurrence of a new merchant in the array must include category unless an exact mapping already exists. `idempotency_key` is required. Reuse the exact same key and payload if retrying this confirmed batch; do not mint a new key for a retry. The server does not detect duplicate purchases. The call is all-or-nothing: any invalid or uncategorized row writes nothing."
+
 type addTransactionInput struct {
-	Amount   string  `json:"amount"`
-	Merchant string  `json:"merchant"`
-	Category *string `json:"category,omitempty"`
-	Date     *string `json:"date,omitempty"`
-	Note     *string `json:"note,omitempty"`
+	Amount         string  `json:"amount"`
+	Merchant       string  `json:"merchant"`
+	Category       *string `json:"category,omitempty"`
+	Date           *string `json:"date,omitempty"`
+	Note           *string `json:"note,omitempty"`
+	IdempotencyKey *string `json:"idempotency_key,omitempty"`
 }
 
 type addTransactionOutput struct {
@@ -26,6 +29,35 @@ type addTransactionOutput struct {
 	Transaction           contract.Transaction `json:"transaction"`
 	CategorySource        string               `json:"category_source"`
 	MerchantMappingAction string               `json:"merchant_mapping_action"`
+	IdempotentReplay      bool                 `json:"idempotent_replay"`
+}
+
+type addTransactionsInput struct {
+	IdempotencyKey string                    `json:"idempotency_key"`
+	Transactions   []addTransactionsRowInput `json:"transactions"`
+}
+
+type addTransactionsRowInput struct {
+	Amount   string  `json:"amount"`
+	Merchant string  `json:"merchant"`
+	Category *string `json:"category,omitempty"`
+	Date     string  `json:"date"`
+	Note     *string `json:"note,omitempty"`
+}
+
+type addTransactionsRowOutput struct {
+	Transaction           contract.Transaction `json:"transaction"`
+	CategorySource        string               `json:"category_source"`
+	MerchantMappingAction string               `json:"merchant_mapping_action"`
+}
+
+type addTransactionsOutput struct {
+	OK               bool                       `json:"ok"`
+	IdempotencyKey   string                     `json:"idempotency_key"`
+	IdempotentReplay bool                       `json:"idempotent_replay"`
+	Count            int                        `json:"count"`
+	TotalAmount      string                     `json:"total_amount"`
+	Transactions     []addTransactionsRowOutput `json:"transactions"`
 }
 
 type updateTransactionInput struct {
@@ -75,9 +107,15 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 
 	mcp.AddTool[addTransactionInput, any](srv, &mcp.Tool{
 		Name:        "add_transaction",
-		Description: "Record one expense and apply exact merchant-default mapping rules atomically.",
+		Description: "Record one expense and apply exact merchant-default mapping rules atomically. An optional idempotency_key makes a successful retry return the original transaction instead of creating a duplicate.",
 		Annotations: writableToolAnnotations(true, false),
 	}, tools.addTransaction)
+
+	mcp.AddTool[addTransactionsInput, any](srv, &mcp.Tool{
+		Name:        "add_transactions",
+		Description: addTransactionsDescription,
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.addTransactions)
 
 	mcp.AddTool[updateTransactionInput, any](srv, &mcp.Tool{
 		Name:        "update_transaction",
@@ -100,11 +138,12 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 
 func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRequest, in addTransactionInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Add(ctx, transaction.AddInput{
-		Amount:   in.Amount,
-		Merchant: in.Merchant,
-		Category: in.Category,
-		Date:     in.Date,
-		Note:     in.Note,
+		Amount:         in.Amount,
+		Merchant:       in.Merchant,
+		Category:       in.Category,
+		Date:           in.Date,
+		Note:           in.Note,
+		IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) != 0 {
 		return toolError(invalidTransactionInputEnvelope(fields))
@@ -118,6 +157,53 @@ func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRe
 		Transaction:           result.Transaction,
 		CategorySource:        result.CategorySource,
 		MerchantMappingAction: result.MerchantMappingAction,
+		IdempotentReplay:      result.IdempotentReplay,
+	})
+}
+
+func (t *transactionTools) addTransactions(ctx context.Context, _ *mcp.CallToolRequest, in addTransactionsInput) (*mcp.CallToolResult, any, error) {
+	rows := make([]transaction.BatchRow, len(in.Transactions))
+	for i, row := range in.Transactions {
+		rows[i] = transaction.BatchRow{
+			Amount:   row.Amount,
+			Merchant: row.Merchant,
+			Category: row.Category,
+			Date:     row.Date,
+			Note:     row.Note,
+		}
+	}
+
+	result, fields, err := t.store.AddBatch(ctx, transaction.AddBatchInput{
+		IdempotencyKey: in.IdempotencyKey,
+		Transactions:   rows,
+	})
+	if len(fields) != 0 {
+		return toolError(invalidTransactionInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapTransactionError("add_transactions", err)
+	}
+
+	totalAmount, err := contract.FormatAmount(result.TotalHundredths)
+	if err != nil {
+		return t.internalError("add_transactions", err)
+	}
+
+	items := make([]addTransactionsRowOutput, len(result.Transactions))
+	for i, item := range result.Transactions {
+		items[i] = addTransactionsRowOutput{
+			Transaction:           item.Transaction,
+			CategorySource:        item.CategorySource,
+			MerchantMappingAction: item.MerchantMappingAction,
+		}
+	}
+	return toolOK(addTransactionsOutput{
+		OK:               true,
+		IdempotencyKey:   result.IdempotencyKey,
+		IdempotentReplay: result.IdempotentReplay,
+		Count:            len(items),
+		TotalAmount:      totalAmount,
+		Transactions:     items,
 	})
 }
 
@@ -183,6 +269,21 @@ func (t *transactionTools) listTransactions(ctx context.Context, _ *mcp.CallTool
 }
 
 func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.CallToolResult, any, error) {
+	var rowErr *transaction.BatchRowError
+	if errors.As(err, &rowErr) {
+		res, payload, callErr := t.mapTransactionError(tool, rowErr.Err)
+		envelope, ok := payload.(contract.ErrorEnvelope)
+		if !ok || envelope.Error.Code == contract.ErrorCodeInternalError {
+			return res, payload, callErr
+		}
+		return toolError(withDetailIndex(envelope, rowErr.Index))
+	}
+
+	var conflict *transaction.IdempotencyConflictError
+	if errors.As(err, &conflict) {
+		return toolError(idempotencyConflictEnvelope(tool, conflict))
+	}
+
 	var notFound *transaction.TransactionNotFoundError
 	if errors.As(err, &notFound) {
 		return toolError(contract.NewErrorEnvelope(contract.NewError(
@@ -252,6 +353,45 @@ func invalidTransactionInputEnvelope(fields []contract.FieldIssue) contract.Erro
 		false,
 		map[string]any{"fields": fields},
 	))
+}
+
+func idempotencyConflictEnvelope(tool string, conflict *transaction.IdempotencyConflictError) contract.ErrorEnvelope {
+	details := map[string]any{
+		"idempotency_key": conflict.IdempotencyKey,
+		"reason":          conflict.Reason,
+	}
+	message := ""
+	switch {
+	case tool == "add_transactions" && conflict.Reason == transaction.IdempotencyReasonPayloadMismatch:
+		message = "The idempotency key has already been used for a different transaction import."
+	case tool == "add_transactions" && conflict.Reason == transaction.IdempotencyReasonTransactionRemoved:
+		message = "An imported transaction was removed; this idempotency key cannot be reused and the batch must not be resubmitted."
+		indexes := conflict.RemovedIndexes
+		if indexes == nil {
+			indexes = []int{}
+		}
+		details["removed_indexes"] = indexes
+	case conflict.Reason == transaction.IdempotencyReasonPayloadMismatch:
+		message = "The idempotency key has already been used for a different transaction request."
+	case conflict.Reason == transaction.IdempotencyReasonTransactionRemoved:
+		message = "The original transaction was removed; this idempotency key cannot be reused."
+	}
+	return contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeIdempotencyConflict,
+		message,
+		false,
+		details,
+	))
+}
+
+func withDetailIndex(envelope contract.ErrorEnvelope, index int) contract.ErrorEnvelope {
+	details := make(map[string]any, len(envelope.Error.Details)+1)
+	for key, value := range envelope.Error.Details {
+		details[key] = value
+	}
+	details["index"] = index
+	envelope.Error.Details = details
+	return envelope
 }
 
 func (t *transactionTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {

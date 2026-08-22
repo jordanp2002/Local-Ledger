@@ -152,6 +152,51 @@ func countBudgets(t *testing.T, ctx context.Context, db *sql.DB) int64 {
 	return countRows(t, ctx, db, `SELECT count(*) FROM budgets`)
 }
 
+func countCategories(t *testing.T, ctx context.Context, db *sql.DB) int64 {
+	t.Helper()
+	return countRows(t, ctx, db, `SELECT count(*) FROM categories`)
+}
+
+func countImports(t *testing.T, ctx context.Context, db *sql.DB) int64 {
+	t.Helper()
+	return countRows(t, ctx, db, `SELECT count(*) FROM transaction_imports`)
+}
+
+func countImportItems(t *testing.T, ctx context.Context, db *sql.DB) int64 {
+	t.Helper()
+	return countRows(t, ctx, db, `SELECT count(*) FROM transaction_import_items`)
+}
+
+func countIdempotency(t *testing.T, ctx context.Context, db *sql.DB) int64 {
+	t.Helper()
+	return countRows(t, ctx, db, `SELECT count(*) FROM transaction_idempotency`)
+}
+
+func addBatch(t *testing.T, ctx context.Context, store *transaction.Store, in transaction.AddBatchInput) transaction.AddBatchResult {
+	t.Helper()
+	result, fields, err := store.AddBatch(ctx, in)
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("AddBatch() = %#v fields %#v error %v", result, fields, err)
+	}
+	return result
+}
+
+func assertNoBatchWrites(t *testing.T, ctx context.Context, db *sql.DB, wantMappings int64) {
+	t.Helper()
+	if got := countTransactions(t, ctx, db); got != 0 {
+		t.Fatalf("transaction rows = %d, want 0", got)
+	}
+	if got := countMappings(t, ctx, db); got != wantMappings {
+		t.Fatalf("known_merchant rows = %d, want %d", got, wantMappings)
+	}
+	if got := countImports(t, ctx, db); got != 0 {
+		t.Fatalf("transaction_import rows = %d, want 0", got)
+	}
+	if got := countImportItems(t, ctx, db); got != 0 {
+		t.Fatalf("transaction_import_item rows = %d, want 0", got)
+	}
+}
+
 func assertNoWrites(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 	if got := countTransactions(t, ctx, db); got != 0 {

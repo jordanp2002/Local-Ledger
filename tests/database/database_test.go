@@ -29,8 +29,8 @@ func TestOpenCreatesMigratesAndClosesOnDiskDatabase(t *testing.T) {
 	if got := db.Stats().MaxOpenConnections; got != 1 {
 		t.Fatalf("max open connections = %d, want 1", got)
 	}
-	if got := openTestQueryInt64(t, db, "PRAGMA user_version"); got != 1 {
-		t.Fatalf("schema version = %d, want 1", got)
+	if got := openTestQueryInt64(t, db, "PRAGMA user_version"); got != 3 {
+		t.Fatalf("schema version = %d, want 3", got)
 	}
 	if got := openTestQueryInt64(t, db, "PRAGMA foreign_keys"); got != 1 {
 		t.Fatalf("foreign_keys = %d, want 1", got)
@@ -133,7 +133,7 @@ func TestOpenRejectsNewerSchemaVersionAndReturnsNoDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open(%q): %v", path, err)
 	}
-	if _, err := seed.Exec("PRAGMA user_version = 2"); err != nil {
+	if _, err := seed.Exec("PRAGMA user_version = 4"); err != nil {
 		seed.Close()
 		t.Fatalf("set newer user_version: %v", err)
 	}
@@ -162,8 +162,8 @@ func TestOpenRejectsNewerSchemaVersionAndReturnsNoDatabase(t *testing.T) {
 		t.Fatalf("reopen newer schema: %v", err)
 	}
 	defer openTestCloseDB(t, check)
-	if got := openTestQueryInt64(t, check, "PRAGMA user_version"); got != 2 {
-		t.Fatalf("schema version after failed startup = %d, want 2", got)
+	if got := openTestQueryInt64(t, check, "PRAGMA user_version"); got != 4 {
+		t.Fatalf("schema version after failed startup = %d, want 4", got)
 	}
 }
 

@@ -19,6 +19,7 @@ const (
 	ErrorCodeMonthlyBudgetNotFound      ErrorCode = "monthly_budget_not_found"
 	ErrorCodeBudgetSourceNotFound       ErrorCode = "budget_source_not_found"
 	ErrorCodeBudgetSourceEmpty          ErrorCode = "budget_source_empty"
+	ErrorCodeIdempotencyConflict        ErrorCode = "idempotency_conflict"
 	ErrorCodeInternalError              ErrorCode = "internal_error"
 )
 
@@ -146,6 +147,8 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "No earlier monthly budget was found to carry forward."
 	case ErrorCodeBudgetSourceEmpty:
 		return "The earlier monthly budget has no active categories to carry forward."
+	case ErrorCodeIdempotencyConflict:
+		return "The idempotency key conflicts with an existing request."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:
