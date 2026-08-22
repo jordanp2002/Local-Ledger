@@ -965,7 +965,7 @@ func TestListTransactionsToolDiscovery(t *testing.T) {
 		t.Fatalf("list_transactions required = %v, want no required fields", required)
 	}
 	properties, _ := schema["properties"].(map[string]any)
-	for _, field := range []string{"start_date", "end_date", "category"} {
+	for _, field := range []string{"start_date", "end_date", "category", "merchant"} {
 		if containsValue(required, field) {
 			t.Fatalf("list_transactions required includes optional %s: %v", field, required)
 		}
@@ -1089,6 +1089,52 @@ func TestListTransactionsUnfilteredAndFilters(t *testing.T) {
 	}
 	if asObject(t, structuredObject(t, inactive)["transactions"].([]any)[0])["note"] != nil {
 		t.Fatalf("unset Dining note = %#v, want null", asObject(t, structuredObject(t, inactive)["transactions"].([]any)[0])["note"])
+	}
+}
+
+func TestListTransactionsMerchantFilter(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), func() time.Time {
+		return time.Date(2026, time.September, 15, 12, 0, 0, 0, time.FixedZone("Toronto", -4*60*60))
+	}, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	createCategoryForMerchantTest(t, session, "Dining")
+
+	metro := addTestTransaction(t, session, map[string]any{
+		"amount": "20.00", "merchant": "Metro", "category": "Groceries", "date": "2026-08-14",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "12.00", "merchant": "Metro Grocery", "category": "Groceries", "date": "2026-08-13",
+	})
+	addTestTransaction(t, session, map[string]any{
+		"amount": "15.00", "merchant": "Cafe", "category": "Dining", "date": "2026-08-14",
+	})
+
+	matched := callTool(t, session, "list_transactions", map[string]any{"merchant": "metro"})
+	if matched.IsError {
+		t.Fatalf("merchant filter failed: %s", structuredJSON(t, matched))
+	}
+	matchedPayload := structuredObject(t, matched)
+	rows := listedTransactions(t, matchedPayload)
+	if len(rows) != 1 || rows[0].ID != metro.ID || rows[0].Merchant != "Metro" {
+		t.Fatalf("merchant filter = %#v, want exact Metro row", rows)
+	}
+	page := objectField(t, matchedPayload, "page")
+	if page["total"] != float64(1) || page["returned"] != float64(1) || page["has_more"] != false {
+		t.Fatalf("merchant page = %#v, want one match", page)
+	}
+
+	empty := callTool(t, session, "list_transactions", map[string]any{"merchant": "Unknown Store"})
+	if empty.IsError {
+		t.Fatalf("unknown merchant IsError = true, want success: %s", structuredJSON(t, empty))
+	}
+	emptyPayload := structuredObject(t, empty)
+	emptyRows, ok := emptyPayload["transactions"].([]any)
+	if !ok || emptyRows == nil || len(emptyRows) != 0 {
+		t.Fatalf("unknown merchant transactions = %#v, want []", emptyPayload["transactions"])
+	}
+	emptyPage := objectField(t, emptyPayload, "page")
+	if emptyPage["total"] != float64(0) || emptyPage["returned"] != float64(0) {
+		t.Fatalf("unknown merchant page = %#v, want zero counts", emptyPage)
 	}
 }
 
@@ -1237,6 +1283,25 @@ func TestListTransactionsInvalidInput(t *testing.T) {
 				"fields": []contract.FieldIssue{
 					{Field: "start_date", Reason: "must be a valid YYYY-MM-DD date"},
 					{Field: "end_date", Reason: "must be a valid YYYY-MM-DD date"},
+				},
+			},
+		)))
+	})
+
+	t.Run("empty merchant", func(t *testing.T) {
+		result := callTool(t, session, "list_transactions", map[string]any{
+			"merchant": "   ",
+		})
+		if !result.IsError {
+			t.Fatal("empty merchant IsError = false, want true")
+		}
+		requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeInvalidInput,
+			"",
+			false,
+			map[string]any{
+				"fields": []contract.FieldIssue{
+					{Field: "merchant", Reason: "must not be empty"},
 				},
 			},
 		)))

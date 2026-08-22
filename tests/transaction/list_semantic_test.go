@@ -239,6 +239,32 @@ func TestListOmittedCategoryIsNotSemanticError(t *testing.T) {
 	}
 }
 
+func TestListEmptyWhitespaceAndNULMerchantAreInvalid(t *testing.T) {
+	ctx := context.Background()
+	store, _, _, db := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	dropTransactionsTable(t, ctx, db)
+
+	for _, merchantName := range []string{"", " \t\n\r\v\f "} {
+		_, fields, err := store.List(ctx, transaction.ListInput{Merchant: stringPtr(merchantName)})
+		if err != nil {
+			t.Fatalf("List(empty merchant %q) error = %v, want semantic issue", merchantName, err)
+		}
+		want := []contract.FieldIssue{{Field: "merchant", Reason: "must not be empty"}}
+		if !reflect.DeepEqual(fields, want) {
+			t.Fatalf("List(empty merchant %q) fields = %#v, want %#v", merchantName, fields, want)
+		}
+	}
+
+	_, fields, err := store.List(ctx, transaction.ListInput{Merchant: stringPtr("Metro\x00")})
+	if err != nil {
+		t.Fatalf("List(NUL merchant) error = %v, want semantic issue", err)
+	}
+	want := []contract.FieldIssue{{Field: "merchant", Reason: "must not contain NUL characters"}}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("NUL merchant fields = %#v, want %#v", fields, want)
+	}
+}
+
 func TestListTrimsASCIICategoryWhitespaceAndPreservesUnicode(t *testing.T) {
 	ctx := context.Background()
 	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
@@ -325,6 +351,7 @@ func TestListCollectsSemanticIssuesInFieldOrder(t *testing.T) {
 		StartDate: stringPtr("2026-8-31"),
 		EndDate:   stringPtr("2026/08/01"),
 		Category:  stringPtr(" "),
+		Merchant:  stringPtr(" "),
 		Limit:     int64Ptr(0),
 		Offset:    int64Ptr(-1),
 	})
@@ -335,6 +362,7 @@ func TestListCollectsSemanticIssuesInFieldOrder(t *testing.T) {
 		{Field: "start_date", Reason: "must be a valid YYYY-MM-DD date"},
 		{Field: "end_date", Reason: "must be a valid YYYY-MM-DD date"},
 		{Field: "category", Reason: "must not be empty"},
+		{Field: "merchant", Reason: "must not be empty"},
 		{Field: "limit", Reason: "must be between 1 and 200"},
 		{Field: "offset", Reason: "must be zero or greater"},
 	}

@@ -87,6 +87,7 @@ type listTransactionsInput struct {
 	StartDate *string `json:"start_date,omitempty"`
 	EndDate   *string `json:"end_date,omitempty"`
 	Category  *string `json:"category,omitempty"`
+	Merchant  *string `json:"merchant,omitempty"`
 	Limit     *int64  `json:"limit,omitempty"`
 	Offset    *int64  `json:"offset,omitempty"`
 }
@@ -131,7 +132,7 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 
 	mcp.AddTool[listTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "list_transactions",
-		Description: "List purchases with optional inclusive date bounds, category filter, and pagination.",
+		Description: "List purchases with optional inclusive date bounds, category filter, exact merchant filter, and pagination.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.listTransactions)
 }
@@ -247,6 +248,7 @@ func (t *transactionTools) listTransactions(ctx context.Context, _ *mcp.CallTool
 		StartDate: in.StartDate,
 		EndDate:   in.EndDate,
 		Category:  in.Category,
+		Merchant:  in.Merchant,
 		Limit:     in.Limit,
 		Offset:    in.Offset,
 	})
