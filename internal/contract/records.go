@@ -49,21 +49,23 @@ type Page struct {
 }
 
 type MonthlySummaryCategory struct {
-	CategoryID int64  `json:"category_id"`
-	Category   string `json:"category"`
-	Budget     string `json:"budget"`
-	Spending   string `json:"spending"`
-	Remaining  string `json:"remaining"`
+	CategoryID    int64   `json:"category_id"`
+	Category      string  `json:"category"`
+	Budget        string  `json:"budget"`
+	Spending      string  `json:"spending"`
+	Remaining     string  `json:"remaining"`
+	SpentOfBudget *string `json:"spent_of_budget"`
 }
 
 type CategorySummary struct {
-	CategoryID       int64  `json:"category_id"`
-	Category         string `json:"category"`
-	Month            string `json:"month"`
-	Budget           string `json:"budget"`
-	TotalSpending    string `json:"total_spending"`
-	Remaining        string `json:"remaining"`
-	TransactionCount int64  `json:"transaction_count"`
+	CategoryID       int64   `json:"category_id"`
+	Category         string  `json:"category"`
+	Month            string  `json:"month"`
+	Budget           string  `json:"budget"`
+	TotalSpending    string  `json:"total_spending"`
+	Remaining        string  `json:"remaining"`
+	SpentOfBudget    *string `json:"spent_of_budget"`
+	TransactionCount int64   `json:"transaction_count"`
 }
 
 type ComparisonMonth struct {

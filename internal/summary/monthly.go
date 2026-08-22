@@ -61,12 +61,17 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 		if err != nil {
 			return MonthlyResult{}, nil, err
 		}
+		spent, err := SpentOfBudget(row.spending, row.budget)
+		if err != nil {
+			return MonthlyResult{}, nil, err
+		}
 		categories = append(categories, contract.MonthlySummaryCategory{
-			CategoryID: id,
-			Category:   row.name,
-			Budget:     budget,
-			Spending:   spending,
-			Remaining:  remaining,
+			CategoryID:    id,
+			Category:      row.name,
+			Budget:        budget,
+			Spending:      spending,
+			Remaining:     remaining,
+			SpentOfBudget: spent,
 		})
 	}
 
@@ -82,6 +87,10 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 	if err != nil {
 		return MonthlyResult{}, nil, err
 	}
+	spentOfBudget, err := SpentOfBudget(totalSpending, totalBudget)
+	if err != nil {
+		return MonthlyResult{}, nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return MonthlyResult{}, nil, err
@@ -91,6 +100,7 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 		TotalBudget:   formattedBudget,
 		TotalSpending: formattedSpending,
 		Remaining:     formattedRemaining,
+		SpentOfBudget: spentOfBudget,
 		Categories:    categories,
 	}, nil, nil
 }

@@ -3,6 +3,8 @@ package summary_test
 import (
 	"context"
 	"errors"
+	"math"
+	"reflect"
 	"testing"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/summary"
@@ -26,6 +28,9 @@ func TestCategorySummaryBudgetedPurchases(t *testing.T) {
 	}
 	if result.Budget != "500.00" || result.TotalSpending != "90.00" || result.Remaining != "410.00" || result.TransactionCount != 3 {
 		t.Fatalf("totals = %#v", result)
+	}
+	if !reflect.DeepEqual(result.SpentOfBudget, stringPtr("18.00")) {
+		t.Fatalf("spent_of_budget = %s, want 18.00 from 90.00/500.00", spentDebug(result.SpentOfBudget))
 	}
 	assertUnchanged(t, ctx, fx.db, before)
 }
@@ -100,13 +105,13 @@ func TestCategoryMissingBudgetRowReportsZero(t *testing.T) {
 	addTransaction(t, ctx, fx.transactions, "25.00", "Shoppers", "Health", "2026-08-11")
 
 	spent := mustCategory(t, ctx, fx.summary, "Health", "2026-08")
-	if spent.Budget != "0.00" || spent.TotalSpending != "25.00" || spent.Remaining != "-25.00" || spent.TransactionCount != 1 {
+	if spent.Budget != "0.00" || spent.TotalSpending != "25.00" || spent.Remaining != "-25.00" || spent.TransactionCount != 1 || spent.SpentOfBudget != nil {
 		t.Fatalf("unbudgeted Health = %#v", spent)
 	}
 
 	dining := createCategory(t, ctx, fx.categories, "Dining")
 	zero := mustCategory(t, ctx, fx.summary, "Dining", "2026-08")
-	if zero.CategoryID != dining.ID || zero.Budget != "0.00" || zero.TotalSpending != "0.00" || zero.Remaining != "0.00" || zero.TransactionCount != 0 {
+	if zero.CategoryID != dining.ID || zero.Budget != "0.00" || zero.TotalSpending != "0.00" || zero.Remaining != "0.00" || zero.TransactionCount != 0 || zero.SpentOfBudget != nil {
 		t.Fatalf("zero Dining = %#v", zero)
 	}
 }
@@ -126,4 +131,26 @@ func TestCategoryRemovedTransactionsDoNotCount(t *testing.T) {
 	if result.TotalSpending != "20.00" || result.TransactionCount != 1 {
 		t.Fatalf("after remove = %#v, want only %d", result, kept.ID)
 	}
+}
+
+func TestCategorySpentOfBudgetMultiplyOverflow(t *testing.T) {
+	ctx := context.Background()
+	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	groceries := createCategory(t, ctx, fx.categories, "Groceries")
+	insertBudget(t, ctx, fx.db, groceries.ID, "2026-08", "1.00")
+	insertRawTransaction(t, ctx, fx.db, "Huge", math.MaxInt64, "2026-08-01", groceries.ID)
+	before := loadSnapshot(t, ctx, fx.db)
+
+	_, fields, err := fx.summary.Category(ctx, "Groceries", "2026-08")
+	if len(fields) != 0 {
+		t.Fatalf("fields = %#v, want none", fields)
+	}
+	if err == nil {
+		t.Fatal("Category() spent_of_budget overflow error = nil")
+	}
+	var notFound *summary.NotFoundError
+	if errors.As(err, &notFound) {
+		t.Fatalf("overflow mapped to not found: %v", err)
+	}
+	assertUnchanged(t, ctx, fx.db, before)
 }

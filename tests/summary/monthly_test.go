@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
@@ -26,16 +27,19 @@ func TestMonthlyBudgetedAndSpentCategories(t *testing.T) {
 	if result.Month != "2026-08" || result.TotalBudget != "650.00" || result.TotalSpending != "120.00" || result.Remaining != "530.00" {
 		t.Fatalf("totals = %#v", result)
 	}
+	if !reflect.DeepEqual(result.SpentOfBudget, stringPtr("18.46")) {
+		t.Fatalf("total spent_of_budget = %s, want 18.46 from 120.00/650.00", spentDebug(result.SpentOfBudget))
+	}
 	if len(result.Categories) != 2 {
 		t.Fatalf("categories = %#v, want Dining then Groceries", result.Categories)
 	}
-	if result.Categories[0] != (contract.MonthlySummaryCategory{
-		CategoryID: dining.ID, Category: "Dining", Budget: "150.00", Spending: "30.00", Remaining: "120.00",
+	if !reflect.DeepEqual(result.Categories[0], contract.MonthlySummaryCategory{
+		CategoryID: dining.ID, Category: "Dining", Budget: "150.00", Spending: "30.00", Remaining: "120.00", SpentOfBudget: stringPtr("20.00"),
 	}) {
 		t.Fatalf("Dining row = %#v", result.Categories[0])
 	}
-	if result.Categories[1] != (contract.MonthlySummaryCategory{
-		CategoryID: groceries.ID, Category: "Groceries", Budget: "500.00", Spending: "90.00", Remaining: "410.00",
+	if !reflect.DeepEqual(result.Categories[1], contract.MonthlySummaryCategory{
+		CategoryID: groceries.ID, Category: "Groceries", Budget: "500.00", Spending: "90.00", Remaining: "410.00", SpentOfBudget: stringPtr("18.00"),
 	}) {
 		t.Fatalf("Groceries row = %#v", result.Categories[1])
 	}
@@ -54,8 +58,14 @@ func TestMonthlyOmitsZeroBudgetWithoutSpending(t *testing.T) {
 	if result.TotalBudget != "500.00" || result.TotalSpending != "0.00" || result.Remaining != "500.00" {
 		t.Fatalf("totals = %#v", result)
 	}
+	if !reflect.DeepEqual(result.SpentOfBudget, stringPtr("0.00")) {
+		t.Fatalf("total spent_of_budget = %s, want 0.00", spentDebug(result.SpentOfBudget))
+	}
 	if len(result.Categories) != 1 || result.Categories[0].Category != "Groceries" {
 		t.Fatalf("categories = %#v, want only Groceries", result.Categories)
+	}
+	if !reflect.DeepEqual(result.Categories[0].SpentOfBudget, stringPtr("0.00")) {
+		t.Fatalf("Groceries spent_of_budget = %s, want 0.00", spentDebug(result.Categories[0].SpentOfBudget))
 	}
 }
 
@@ -77,13 +87,13 @@ func TestMonthlyIncludesZeroBudgetAndUnbudgetedSpending(t *testing.T) {
 	if len(result.Categories) != 3 {
 		t.Fatalf("categories = %#v, want Dining, Groceries, Health", result.Categories)
 	}
-	if result.Categories[0].Category != "Dining" || result.Categories[0].Budget != "0.00" || result.Categories[0].Spending != "10.00" || result.Categories[0].Remaining != "-10.00" {
+	if result.Categories[0].Category != "Dining" || result.Categories[0].Budget != "0.00" || result.Categories[0].Spending != "10.00" || result.Categories[0].Remaining != "-10.00" || result.Categories[0].SpentOfBudget != nil {
 		t.Fatalf("Dining = %#v", result.Categories[0])
 	}
 	if result.Categories[1].Category != "Groceries" || result.Categories[1].Budget != "500.00" {
 		t.Fatalf("Groceries = %#v", result.Categories[1])
 	}
-	if result.Categories[2].Category != "Health" || result.Categories[2].Budget != "0.00" || result.Categories[2].Spending != "25.00" || result.Categories[2].Remaining != "-25.00" {
+	if result.Categories[2].Category != "Health" || result.Categories[2].Budget != "0.00" || result.Categories[2].Spending != "25.00" || result.Categories[2].Remaining != "-25.00" || result.Categories[2].SpentOfBudget != nil {
 		t.Fatalf("Health = %#v", result.Categories[2])
 	}
 	_ = health
@@ -217,7 +227,7 @@ func TestMonthlyZeroOnlySnapshotReturnsEmptyCategories(t *testing.T) {
 	insertBudget(t, ctx, fx.db, health.ID, "2026-08", "0.00")
 
 	result := mustMonthly(t, ctx, fx.summary, "2026-08")
-	if result.TotalBudget != "0.00" || result.TotalSpending != "0.00" || result.Remaining != "0.00" {
+	if result.TotalBudget != "0.00" || result.TotalSpending != "0.00" || result.Remaining != "0.00" || result.SpentOfBudget != nil {
 		t.Fatalf("totals = %#v", result)
 	}
 	encoded, err := json.Marshal(result.Categories)
@@ -254,6 +264,28 @@ func TestMonthlyOverflowIsInternalErrorAndDoesNotWrap(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("Monthly() overflow error = nil")
+	}
+	var notFound *summary.NotFoundError
+	if errors.As(err, &notFound) {
+		t.Fatalf("overflow mapped to not found: %v", err)
+	}
+	assertUnchanged(t, ctx, fx.db, before)
+}
+
+func TestMonthlySpentOfBudgetMultiplyOverflow(t *testing.T) {
+	ctx := context.Background()
+	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	groceries := createCategory(t, ctx, fx.categories, "Groceries")
+	insertBudget(t, ctx, fx.db, groceries.ID, "2026-08", "1.00")
+	insertRawTransaction(t, ctx, fx.db, "Huge", math.MaxInt64, "2026-08-01", groceries.ID)
+	before := loadSnapshot(t, ctx, fx.db)
+
+	_, fields, err := fx.summary.Monthly(ctx, "2026-08")
+	if len(fields) != 0 {
+		t.Fatalf("fields = %#v, want none", fields)
+	}
+	if err == nil {
+		t.Fatal("Monthly() spent_of_budget overflow error = nil")
 	}
 	var notFound *summary.NotFoundError
 	if errors.As(err, &notFound) {
