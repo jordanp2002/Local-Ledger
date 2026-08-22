@@ -123,6 +123,18 @@ func mustCategory(t *testing.T, ctx context.Context, store *summary.Store, categ
 	return result
 }
 
+func mustSpending(t *testing.T, ctx context.Context, store *summary.Store, in summary.SpendingInput) summary.SpendingResult {
+	t.Helper()
+	result, fields, err := store.Spending(ctx, in)
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("Spending() = %#v fields %#v error %v", result, fields, err)
+	}
+	if result.Categories == nil {
+		t.Fatal("Spending() categories is nil, want non-nil slice")
+	}
+	return result
+}
+
 func stringPtr(value string) *string {
 	return &value
 }

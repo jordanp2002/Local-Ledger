@@ -53,6 +53,24 @@ type compareMonthsOutput struct {
 	Categories []contract.ComparisonCategory `json:"categories"`
 }
 
+type spendingSummaryInput struct {
+	StartDate *string `json:"start_date,omitempty"`
+	EndDate   *string `json:"end_date,omitempty"`
+	Category  *string `json:"category,omitempty"`
+	Merchant  *string `json:"merchant,omitempty"`
+}
+
+type spendingSummaryOutput struct {
+	OK               bool                               `json:"ok"`
+	StartDate        *string                            `json:"start_date"`
+	EndDate          *string                            `json:"end_date"`
+	Category         *string                            `json:"category"`
+	Merchant         *string                            `json:"merchant"`
+	TotalSpending    string                             `json:"total_spending"`
+	TransactionCount int64                              `json:"transaction_count"`
+	Categories       []contract.SpendingSummaryCategory `json:"categories"`
+}
+
 type summaryTools struct {
 	store  *summary.Store
 	logger *log.Logger
@@ -78,6 +96,12 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 		Description: "Compare two stored monthly budget snapshots and their spending.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.compareMonths)
+
+	mcp.AddTool[spendingSummaryInput, any](srv, &mcp.Tool{
+		Name:        "get_spending_summary",
+		Description: "Total spending over an optional inclusive date range, with optional category and exact merchant filters. Does not require a monthly budget snapshot.",
+		Annotations: readOnlyToolAnnotations(),
+	}, tools.getSpendingSummary)
 }
 
 func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolRequest, in monthlySummaryInput) (*mcp.CallToolResult, any, error) {
@@ -143,6 +167,36 @@ func (t *summaryTools) compareMonths(ctx context.Context, _ *mcp.CallToolRequest
 		To:         result.To,
 		Change:     result.Change,
 		Categories: categories,
+	})
+}
+
+func (t *summaryTools) getSpendingSummary(ctx context.Context, _ *mcp.CallToolRequest, in spendingSummaryInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.Spending(ctx, summary.SpendingInput{
+		StartDate: in.StartDate,
+		EndDate:   in.EndDate,
+		Category:  in.Category,
+		Merchant:  in.Merchant,
+	})
+	if len(fields) != 0 {
+		return toolError(invalidSummaryInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapSummaryError("get_spending_summary", err)
+	}
+
+	categories := result.Categories
+	if categories == nil {
+		categories = []contract.SpendingSummaryCategory{}
+	}
+	return toolOK(spendingSummaryOutput{
+		OK:               true,
+		StartDate:        result.StartDate,
+		EndDate:          result.EndDate,
+		Category:         result.Category,
+		Merchant:         result.Merchant,
+		TotalSpending:    result.TotalSpending,
+		TransactionCount: result.TransactionCount,
+		Categories:       categories,
 	})
 }
 
