@@ -27,7 +27,7 @@ The database file is your finance ledger. Back it up using your normal file-back
 
 ## Tools
 
-The server exposes twenty finance tools:
+The server exposes twenty-one finance tools:
 
 - `add_transaction`
 - `add_transactions`
@@ -47,6 +47,7 @@ The server exposes twenty finance tools:
 - `update_transaction`
 - `remove_transaction`
 - `get_monthly_summary`
+- `get_monthly_series`
 - `get_category_summary`
 - `get_spending_summary`
 
