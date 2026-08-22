@@ -749,45 +749,55 @@ func TestSetCapturesInjectedNowOnce(t *testing.T) {
 	}
 }
 
-func TestSetRejectsPastAndFutureMonthsBeforeWrite(t *testing.T) {
+func TestSetUpdatesExistingPastMonth(t *testing.T) {
 	ctx := context.Background()
 	store, categories, db := openBudgetStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
 	groceries := createCategory(t, ctx, categories, "Groceries")
 	insertBudget(t, ctx, db, groceries.ID, "2026-07", "10.00")
 	insertBudget(t, ctx, db, groceries.ID, "2026-08", "20.00")
+	augustBefore := listStoredBudgets(t, ctx, db, "2026-08")
+
+	result, fields, err := store.Set(ctx, "2026-07", []budget.Allocation{
+		{Category: groceries.Name, Amount: "99.00"},
+	})
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("Set(2026-07) = %#v fields %#v error %v", result, fields, err)
+	}
+	if result.Month != "2026-07" || len(result.Changes) != 1 || result.Changes[0].Created || result.Changes[0].Budget.Amount != "99.00" {
+		t.Fatalf("Set(2026-07) result = %#v, want July Groceries 99.00", result)
+	}
+	july := listStoredBudgets(t, ctx, db, "2026-07")
+	if len(july) != 1 || july[0].AmountHundredths != 9900 {
+		t.Fatalf("July rows = %#v, want 99.00", july)
+	}
+	if !reflect.DeepEqual(listStoredBudgets(t, ctx, db, "2026-08"), augustBefore) {
+		t.Fatal("August changed after past-month Set")
+	}
+}
+
+func TestSetRejectsFutureMonthBeforeWrite(t *testing.T) {
+	ctx := context.Background()
+	store, categories, db := openBudgetStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	groceries := createCategory(t, ctx, categories, "Groceries")
+	insertBudget(t, ctx, db, groceries.ID, "2026-08", "20.00")
 	insertBudget(t, ctx, db, groceries.ID, "2026-09", "30.00")
-	julyBefore := listStoredBudgets(t, ctx, db, "2026-07")
 	augustBefore := listStoredBudgets(t, ctx, db, "2026-08")
 	septemberBefore := listStoredBudgets(t, ctx, db, "2026-09")
 
-	_, fields, err := store.Set(ctx, "2026-07", []budget.Allocation{
-		{Category: groceries.Name, Amount: "99.00"},
-	})
-	if err != nil {
-		t.Fatalf("Set(2026-07) error = %v, want semantic issue", err)
-	}
-	want := []contract.FieldIssue{{Field: "month", Reason: "must equal the current local month"}}
-	if !reflect.DeepEqual(fields, want) {
-		t.Fatalf("past-month fields = %#v, want %#v", fields, want)
-	}
-
-	_, fields, err = store.Set(ctx, "2026-09", []budget.Allocation{
+	_, fields, err := store.Set(ctx, "2026-09", []budget.Allocation{
 		{Category: groceries.Name, Amount: "99.00"},
 	})
 	if err != nil {
 		t.Fatalf("Set(2026-09) error = %v, want semantic issue", err)
 	}
+	want := []contract.FieldIssue{{Field: "month", Reason: "must not be in the future"}}
 	if !reflect.DeepEqual(fields, want) {
 		t.Fatalf("future-month fields = %#v, want %#v", fields, want)
 	}
-
-	if !reflect.DeepEqual(listStoredBudgets(t, ctx, db, "2026-07"), julyBefore) {
-		t.Fatal("July changed after non-current Set")
-	}
 	if !reflect.DeepEqual(listStoredBudgets(t, ctx, db, "2026-08"), augustBefore) {
-		t.Fatal("August changed after non-current Set")
+		t.Fatal("August changed after future Set")
 	}
 	if !reflect.DeepEqual(listStoredBudgets(t, ctx, db, "2026-09"), septemberBefore) {
-		t.Fatal("September changed after non-current Set")
+		t.Fatal("September changed after future Set")
 	}
 }

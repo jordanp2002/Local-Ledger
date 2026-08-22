@@ -156,7 +156,29 @@ func TestCreateExplicitRejectsTotalOverflowBeforeTransaction(t *testing.T) {
 	}
 }
 
-func TestCreateExplicitRequiresCurrentLocalMonth(t *testing.T) {
+func TestCreateExplicitAllowsPastMonth(t *testing.T) {
+	ctx := context.Background()
+	store, categories, db := openBudgetStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	groceries := createCategory(t, ctx, categories, "Groceries")
+
+	result, fields, err := store.CreateExplicit(ctx, "2026-07", []budget.Allocation{
+		{Category: groceries.Name, Amount: "100.00"},
+	})
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("CreateExplicit(2026-07) = %#v fields %#v error %v", result, fields, err)
+	}
+	if result.Month != "2026-07" || result.TotalBudget != "100.00" {
+		t.Fatalf("result = %#v, want 2026-07 100.00", result)
+	}
+	if got := countBudgetRows(t, ctx, db, "2026-07"); got != 1 {
+		t.Fatalf("July rows = %d, want 1", got)
+	}
+	if got := countBudgetRows(t, ctx, db, "2026-08"); got != 0 {
+		t.Fatalf("August rows = %d, want 0", got)
+	}
+}
+
+func TestCreateExplicitRejectsFutureMonth(t *testing.T) {
 	ctx := context.Background()
 	store, _, db := openBudgetStore(t, torontoTime(t, 2026, 8, 31, 23, 30))
 
@@ -164,12 +186,12 @@ func TestCreateExplicitRequiresCurrentLocalMonth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExplicit() error = %v, want semantic issue", err)
 	}
-	want := []contract.FieldIssue{{Field: "month", Reason: "must equal the current local month"}}
+	want := []contract.FieldIssue{{Field: "month", Reason: "must not be in the future"}}
 	if !reflect.DeepEqual(fields, want) {
 		t.Fatalf("month fields = %#v, want %#v", fields, want)
 	}
 	if got := countBudgetRows(t, ctx, db, "2026-09"); got != 0 {
-		t.Fatalf("budget rows after non-current month = %d, want 0", got)
+		t.Fatalf("budget rows after future month = %d, want 0", got)
 	}
 }
 

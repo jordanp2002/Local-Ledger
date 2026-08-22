@@ -201,7 +201,7 @@ func TestCreateValidatesSelectedCarryForwardOverridesAfterMonthIssues(t *testing
 	store, _, db := openBudgetStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
 
 	_, fields, err := store.Create(ctx, budget.CreateInput{
-		Month:        "2026-07",
+		Month:        "2026-09",
 		CarryForward: boolPtr(true),
 		Overrides: []budget.Allocation{
 			{Category: " \t", Amount: "-1"},
@@ -212,7 +212,7 @@ func TestCreateValidatesSelectedCarryForwardOverridesAfterMonthIssues(t *testing
 		t.Fatalf("Create() error = %v, want semantic issues", err)
 	}
 	want := []contract.FieldIssue{
-		{Field: "month", Reason: "must equal the current local month"},
+		{Field: "month", Reason: "must not be in the future"},
 		{Field: "overrides[0].category", Reason: "must not be empty"},
 		{Field: "overrides[0].amount", Reason: "must be a non-negative amount with at most two decimal places"},
 		{Field: "overrides[1].category", Reason: "must not contain NUL characters"},
@@ -221,7 +221,7 @@ func TestCreateValidatesSelectedCarryForwardOverridesAfterMonthIssues(t *testing
 	if !reflect.DeepEqual(fields, want) {
 		t.Fatalf("override validation fields = %#v, want %#v", fields, want)
 	}
-	if got := countBudgetRows(t, ctx, db, "2026-07"); got != 0 {
+	if got := countBudgetRows(t, ctx, db, "2026-09"); got != 0 {
 		t.Fatalf("budget rows after override validation = %d, want 0", got)
 	}
 }
@@ -405,8 +405,8 @@ func TestCreateDerivesMonthFromLocalClockBeforeUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCarryForward(2026-09) error = %v, want semantic issue", err)
 	}
-	if !reflect.DeepEqual(fields, []contract.FieldIssue{{Field: "month", Reason: "must equal the current local month"}}) {
-		t.Fatalf("UTC-month fields = %#v, want current-local-month issue", fields)
+	if !reflect.DeepEqual(fields, []contract.FieldIssue{{Field: "month", Reason: "must not be in the future"}}) {
+		t.Fatalf("UTC-month fields = %#v, want future-month issue", fields)
 	}
 
 	result, fields, err := store.CreateCarryForward(ctx, "2026-08", nil)

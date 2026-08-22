@@ -1,4 +1,4 @@
-// Package budget implements current-month budget snapshots.
+// Package budget implements monthly budget snapshots.
 package budget
 
 import (
@@ -159,7 +159,7 @@ type createClassification struct {
 
 const categoryColumns = `id, name, active, created_at, updated_at`
 
-// Create classifies the creation mode and writes the current month's snapshot.
+// Create classifies the creation mode and writes a snapshot for the current or a past local month.
 func (s *Store) Create(ctx context.Context, in CreateInput) (CreateResult, []contract.FieldIssue, error) {
 	now := time.Now()
 	if s != nil && s.Now != nil {
@@ -184,12 +184,12 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (CreateResult, []con
 	}
 }
 
-// CreateExplicit validates and atomically creates an explicit current-month snapshot.
+// CreateExplicit validates and atomically creates an explicit snapshot for the current or a past local month.
 func (s *Store) CreateExplicit(ctx context.Context, month string, allocations []Allocation) (CreateResult, []contract.FieldIssue, error) {
 	return s.Create(ctx, CreateInput{Month: month, Budgets: allocations})
 }
 
-// CreateCarryForward copies the latest earlier snapshot into the current month.
+// CreateCarryForward copies the latest earlier snapshot into the current or a past local month.
 func (s *Store) CreateCarryForward(ctx context.Context, month string, overrides []Allocation) (CreateResult, []contract.FieldIssue, error) {
 	carryForward := true
 	return s.Create(ctx, CreateInput{
@@ -345,11 +345,8 @@ func classifyCreate(in CreateInput, now time.Time) (createClassification, []cont
 			Field:  "month",
 			Reason: "must be a valid YYYY-MM month",
 		})
-	} else if parsedMonth != localMonth(now) {
-		fields = append(fields, contract.FieldIssue{
-			Field:  "month",
-			Reason: "must equal the current local month",
-		})
+	} else if issue := futureMonthIssue(parsedMonth, now); issue != nil {
+		fields = append(fields, *issue)
 	}
 
 	carrySelected := in.CarryForward != nil && *in.CarryForward
@@ -464,6 +461,16 @@ func validateAllocations(prefix string, allocations []Allocation) ([]normalizedA
 func localMonth(now time.Time) string {
 	// Format uses the timestamp's location. Do not convert to UTC first.
 	return now.Format("2006-01")
+}
+
+func futureMonthIssue(parsedMonth string, now time.Time) *contract.FieldIssue {
+	if parsedMonth > localMonth(now) {
+		return &contract.FieldIssue{
+			Field:  "month",
+			Reason: "must not be in the future",
+		}
+	}
+	return nil
 }
 
 func checkedAdd(left, right int64) (int64, bool) {

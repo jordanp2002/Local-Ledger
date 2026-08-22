@@ -257,6 +257,60 @@ func TestCreateMonthlyBudgetCarryForwardSuccess(t *testing.T) {
 	}
 }
 
+func TestCreateMonthlyBudgetCarryForwardCatchUp(t *testing.T) {
+	db := openCategoryDB(t)
+	session := connectCategorySession(t, db, fixedBudgetNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+
+	january := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month":   "2026-01",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "80.00"}},
+	})
+	if january.IsError {
+		t.Fatalf("create January: %s", structuredJSON(t, january))
+	}
+
+	march := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month":         "2026-03",
+		"carry_forward": true,
+	})
+	if march.IsError {
+		t.Fatalf("carry into March: %s", structuredJSON(t, march))
+	}
+	marchGot := structuredObject(t, march)
+	if marchGot["creation_mode"] != "carry_forward" || marchGot["source_month"] != "2026-01" || marchGot["total_budget"] != "80.00" {
+		t.Fatalf("March carry-forward = %s, want source 2026-01 80.00", structuredJSON(t, march))
+	}
+
+	august := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month":         "2026-08",
+		"carry_forward": true,
+	})
+	if august.IsError {
+		t.Fatalf("carry into August: %s", structuredJSON(t, august))
+	}
+	augustGot := structuredObject(t, august)
+	if augustGot["source_month"] != "2026-03" || augustGot["total_budget"] != "80.00" {
+		t.Fatalf("August carry-forward = %s, want source 2026-03 80.00", structuredJSON(t, august))
+	}
+	if countBudgetsForMonth(t, db, "2026-02") != 0 {
+		t.Fatalf("February rows = %d, want 0", countBudgetsForMonth(t, db, "2026-02"))
+	}
+	if budgetAmountHundredths(t, db, "2026-01", "Groceries") != 8000 {
+		t.Fatal("January changed after later carry-forwards")
+	}
+
+	for _, month := range []string{"2026-01", "2026-03", "2026-08"} {
+		summary := callTool(t, session, "get_monthly_summary", map[string]any{"month": month})
+		if summary.IsError {
+			t.Fatalf("get_monthly_summary(%s): %s", month, structuredJSON(t, summary))
+		}
+		if structuredObject(t, summary)["total_budget"] != "80.00" {
+			t.Fatalf("%s summary = %s, want 80.00", month, structuredJSON(t, summary))
+		}
+	}
+}
+
 func TestCreateMonthlyBudgetCarryForwardErrors(t *testing.T) {
 	t.Run("source not found", func(t *testing.T) {
 		session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
@@ -270,6 +324,28 @@ func TestCreateMonthlyBudgetCarryForwardErrors(t *testing.T) {
 			"There is no earlier monthly budget to carry forward into 2026-08.",
 			false,
 			map[string]any{"month": "2026-08"},
+		)))
+	})
+
+	t.Run("past month ignores later snapshot", func(t *testing.T) {
+		session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+		createCategoryForMerchantTest(t, session, "Groceries")
+		july := callTool(t, session, "create_monthly_budget", map[string]any{
+			"month":   "2026-07",
+			"budgets": []map[string]any{{"category": "Groceries", "amount": "200.00"}},
+		})
+		if july.IsError {
+			t.Fatalf("create July: %s", structuredJSON(t, july))
+		}
+		result := callTool(t, session, "create_monthly_budget", map[string]any{
+			"month":         "2026-03",
+			"carry_forward": true,
+		})
+		requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeBudgetSourceNotFound,
+			"There is no earlier monthly budget to carry forward into 2026-03.",
+			false,
+			map[string]any{"month": "2026-03"},
 		)))
 	})
 
@@ -662,7 +738,95 @@ func TestSetBudgetsInternalError(t *testing.T) {
 	}
 }
 
-func TestSetBudgetsCurrentMonthOnly(t *testing.T) {
+func TestCreateMonthlyBudgetPastMonthThenSummary(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+
+	created := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month":   "2026-07",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "400.00"}},
+	})
+	if created.IsError {
+		t.Fatalf("create past month: %s", structuredJSON(t, created))
+	}
+	if structuredObject(t, created)["month"] != "2026-07" {
+		t.Fatalf("created month = %s, want 2026-07", structuredJSON(t, created))
+	}
+
+	summary := callTool(t, session, "get_monthly_summary", map[string]any{"month": "2026-07"})
+	if summary.IsError {
+		t.Fatalf("get_monthly_summary(2026-07): %s", structuredJSON(t, summary))
+	}
+	got := structuredObject(t, summary)
+	if got["ok"] != true || got["month"] != "2026-07" || got["total_budget"] != "400.00" {
+		t.Fatalf("past-month summary = %s, want July 400.00", structuredJSON(t, summary))
+	}
+}
+
+func TestCreateMonthlyBudgetRejectsFutureMonth(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	result := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month":   "2026-09",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "1.00"}},
+	})
+	requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeInvalidInput,
+		"",
+		false,
+		map[string]any{"fields": []contract.FieldIssue{{Field: "month", Reason: "must not be in the future"}}},
+	)))
+}
+
+func TestSetBudgetsUpdatesExistingPastMonth(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	created := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month":   "2026-07",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "20.00"}},
+	})
+	if created.IsError {
+		t.Fatalf("create past month: %s", structuredJSON(t, created))
+	}
+
+	result := callTool(t, session, "set_budgets", map[string]any{
+		"month":   "2026-07",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "55.00"}},
+	})
+	if result.IsError {
+		t.Fatalf("set_budgets(2026-07): %s", structuredJSON(t, result))
+	}
+	got := structuredObject(t, result)
+	if got["ok"] != true || got["month"] != "2026-07" {
+		t.Fatalf("set_budgets metadata = %s", structuredJSON(t, result))
+	}
+	changes, _ := got["changes"].([]any)
+	if len(changes) != 1 {
+		t.Fatalf("changes = %#v, want one row", got["changes"])
+	}
+	change := asObject(t, changes[0])
+	updated := decodeBudget(t, change["budget"])
+	if change["created"] != false || updated.Amount != "55.00" || updated.Month != "2026-07" {
+		t.Fatalf("past-month change = %#v, want July Groceries 55.00", changes[0])
+	}
+}
+
+func TestSetBudgetsPastMonthWithoutSnapshotIsNotFound(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	result := callTool(t, session, "set_budgets", map[string]any{
+		"month":   "2026-07",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "99.00"}},
+	})
+	requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
+		contract.ErrorCodeMonthlyBudgetNotFound,
+		"No monthly budget exists for 2026-07.",
+		false,
+		map[string]any{"month": "2026-07", "latest_earlier_month": nil},
+	)))
+}
+
+func TestSetBudgetsRejectsFutureMonth(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
 	createCategoryForMerchantTest(t, session, "Groceries")
 	created := callTool(t, session, "create_monthly_budget", map[string]any{
@@ -673,19 +837,16 @@ func TestSetBudgetsCurrentMonthOnly(t *testing.T) {
 		t.Fatalf("create monthly budget: %s", structuredJSON(t, created))
 	}
 
-	want := contract.NewErrorEnvelope(contract.NewError(
+	result := callTool(t, session, "set_budgets", map[string]any{
+		"month":   "2026-09",
+		"budgets": []map[string]any{{"category": "Groceries", "amount": "99.00"}},
+	})
+	requireStructuredEqual(t, result, contract.NewErrorEnvelope(contract.NewError(
 		contract.ErrorCodeInvalidInput,
 		"",
 		false,
-		map[string]any{"fields": []contract.FieldIssue{{Field: "month", Reason: "must equal the current local month"}}},
-	))
-	for _, month := range []string{"2026-07", "2026-09"} {
-		result := callTool(t, session, "set_budgets", map[string]any{
-			"month":   month,
-			"budgets": []map[string]any{{"category": "Groceries", "amount": "99.00"}},
-		})
-		requireStructuredEqual(t, result, want)
-	}
+		map[string]any{"fields": []contract.FieldIssue{{Field: "month", Reason: "must not be in the future"}}},
+	)))
 }
 
 func TestSetBudgetsCannotCreateNewMonth(t *testing.T) {
