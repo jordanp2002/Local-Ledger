@@ -40,6 +40,28 @@ func TestOpenCreatesMigratesAndClosesOnDiskDatabase(t *testing.T) {
 	}
 }
 
+func TestOpenCreatesMissingParentDirectory(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "LocalLedger")
+	path := filepath.Join(parent, "finance.db")
+
+	db, err := database.Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Open(%q) error = %v", path, err)
+	}
+	defer openTestCloseDB(t, db)
+
+	info, err := os.Stat(parent)
+	if err != nil {
+		t.Fatalf("stat database directory: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("database parent %q is not a directory", parent)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("stat database file: %v", err)
+	}
+}
+
 func TestOpenPreservesURICharacterPaths(t *testing.T) {
 	characters := []string{"?", "#", "%", "&"}
 	for _, character := range characters {

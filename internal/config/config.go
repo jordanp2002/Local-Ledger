@@ -10,11 +10,16 @@ import (
 
 const DatabasePathEnv = "LOCAL_FINANCE_DB_PATH"
 
-// DatabasePathFromEnv reads and validates the configured ledger path.
-func DatabasePathFromEnv() (string, error) {
+// DatabasePath returns the configured ledger path or the default path in the
+// user's LocalLedger directory.
+func DatabasePath() (string, error) {
 	databasePath, ok := os.LookupEnv(DatabasePathEnv)
 	if !ok {
-		return "", fmt.Errorf("%s is not set", DatabasePathEnv)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("find home directory: %w", err)
+		}
+		return filepath.Join(home, "LocalLedger", "finance.db"), nil
 	}
 	if databasePath == "" {
 		return "", fmt.Errorf("%s is empty", DatabasePathEnv)
