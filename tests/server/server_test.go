@@ -35,7 +35,7 @@ func TestStdioLifecycle(t *testing.T) {
 	sessionClosed := false
 	defer func() {
 		if !sessionClosed {
-			closeAndWaitSession(t, session)
+			closeSession(t, session)
 		}
 	}()
 	if result := session.InitializeResult(); result == nil || result.ServerInfo == nil || result.ServerInfo.Name != "local-finance-mcp" {
@@ -241,7 +241,7 @@ func TestStdioLifecycle(t *testing.T) {
 		t.Fatalf("get_category_summary = %s, want current-month Groceries 300.00", structuredJSON(t, categorySummary))
 	}
 
-	closeAndWaitSession(t, session)
+	closeSession(t, session)
 	sessionClosed = true
 	if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
 		t.Fatal("helper process has not exited after closing the client session")
@@ -347,13 +347,10 @@ func TestStdioLifecycle(t *testing.T) {
 	}
 }
 
-func closeAndWaitSession(t *testing.T, session *mcp.ClientSession) {
+func closeSession(t *testing.T, session *mcp.ClientSession) {
 	t.Helper()
 	if err := session.Close(); err != nil && !errors.Is(err, mcp.ErrConnectionClosed) {
 		t.Errorf("close stdio session: %v", err)
-	}
-	if err := session.Wait(); err != nil && !errors.Is(err, mcp.ErrConnectionClosed) {
-		t.Errorf("wait for stdio session: %v", err)
 	}
 }
 

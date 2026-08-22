@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 )
 
@@ -20,6 +21,9 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	}
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("open database: path %q is not absolute", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("open database: create parent directory: %w", err)
 	}
 
 	dsn := sqliteDSN(path)

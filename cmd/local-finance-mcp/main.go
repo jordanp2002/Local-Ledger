@@ -12,7 +12,7 @@ import (
 )
 
 func run(ctx context.Context) error {
-	databasePath, err := config.DatabasePathFromEnv()
+	databasePath, err := config.DatabasePath()
 	if err != nil {
 		return err
 	}

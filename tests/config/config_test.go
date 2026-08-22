@@ -12,61 +12,69 @@ import (
 	"github.com/jordanp2002/local-finance-mcp/internal/config"
 )
 
-func TestConfigFromEnvRejectsMissingDatabasePath(t *testing.T) {
+func TestDatabasePathUsesDefaultWhenEnvironmentIsUnset(t *testing.T) {
 	t.Setenv(config.DatabasePathEnv, "")
 	if err := os.Unsetenv(config.DatabasePathEnv); err != nil {
 		t.Fatalf("unset %s: %v", config.DatabasePathEnv, err)
 	}
 
-	_, err := config.DatabasePathFromEnv()
-	if err == nil || !strings.Contains(err.Error(), "is not set") {
-		t.Fatalf("configFromEnv() error = %v, want unset-variable error", err)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+	want := filepath.Join(home, "LocalLedger", "finance.db")
+	got, err := config.DatabasePath()
+	if err != nil {
+		t.Fatalf("DatabasePath() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("DatabasePath() = %q, want %q", got, want)
 	}
 }
 
-func TestConfigFromEnvRejectsExplicitlyEmptyDatabasePath(t *testing.T) {
+func TestDatabasePathRejectsExplicitlyEmptyOverride(t *testing.T) {
 	t.Setenv(config.DatabasePathEnv, "")
 
-	_, err := config.DatabasePathFromEnv()
+	_, err := config.DatabasePath()
 	if err == nil || !strings.Contains(err.Error(), "is empty") {
-		t.Fatalf("configFromEnv() error = %v, want empty-variable error", err)
+		t.Fatalf("DatabasePath() error = %v, want empty-variable error", err)
 	}
 }
 
-func TestConfigFromEnvRejectsRelativeDatabasePath(t *testing.T) {
+func TestDatabasePathRejectsRelativeOverride(t *testing.T) {
 	t.Setenv(config.DatabasePathEnv, filepath.Join("data", "finance.db"))
 
-	_, err := config.DatabasePathFromEnv()
+	_, err := config.DatabasePath()
 	if err == nil || !strings.Contains(err.Error(), "absolute path") {
-		t.Fatalf("configFromEnv() error = %v, want relative-path error", err)
+		t.Fatalf("DatabasePath() error = %v, want relative-path error", err)
 	}
 }
 
-func TestConfigFromEnvAcceptsAbsoluteDatabasePath(t *testing.T) {
+func TestDatabasePathAcceptsAbsoluteOverride(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "finance.db")
 	t.Setenv(config.DatabasePathEnv, databasePath)
 
-	got, err := config.DatabasePathFromEnv()
+	got, err := config.DatabasePath()
 	if err != nil {
-		t.Fatalf("DatabasePathFromEnv() error = %v", err)
+		t.Fatalf("DatabasePath() error = %v", err)
 	}
 	if got != databasePath {
-		t.Fatalf("DatabasePathFromEnv() = %q, want %q", got, databasePath)
+		t.Fatalf("DatabasePath() = %q, want %q", got, databasePath)
 	}
 }
 
-func TestConfigFromEnvErrorsAreActionable(t *testing.T) {
+func TestDatabasePathErrorsAreActionable(t *testing.T) {
 	t.Setenv(config.DatabasePathEnv, "relative.db")
 
-	_, err := config.DatabasePathFromEnv()
+	_, err := config.DatabasePath()
 	if err == nil {
-		t.Fatal("configFromEnv() error = nil")
+		t.Fatal("DatabasePath() error = nil")
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("configFromEnv() returned unrelated filesystem error: %v", err)
+		t.Fatalf("DatabasePath() returned unrelated filesystem error: %v", err)
 	}
 	if !strings.Contains(err.Error(), config.DatabasePathEnv) {
-		t.Fatalf("configFromEnv() error = %v, want environment variable name", err)
+		t.Fatalf("DatabasePath() error = %v, want environment variable name", err)
 	}
 }
 

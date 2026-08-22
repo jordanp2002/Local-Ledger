@@ -4,57 +4,48 @@
 
 # Local Ledger
 
-A local-first budgeting MCP server.
+A local-first MCP server for monthly budgeting. Data is stored in one SQLite database on your computer.
 
-Inspiration:
+## Inspiration
 
 After working to create a similar system/solution across my local file storage system or a "AI Second Brain" some would call it, I realized this could be useful to set up as an mcp server as my implementation at the time was basically:
 
 Skills with defined queries -> Write to local SQLite DB -> Read from local SQLite DB
 
-While this works and is still effective for my needs, I thought an MCP would be a great way to build sharable way of doing this so others could potential have the same capabilities. Not to say my solution couldn't be done in one prompt by any frontier model but this solution creates an easy way to just setup the functionality without wasting your usage. It is also kind of just for my learning too and familiarizing myself with MCP and supplementing my Go skill development. 
+While this works and is still effective for my needs, I thought an MCP would be a great way to build sharable way of doing this so others could potential have the same capabilities. Not to say my solution couldn't be done in one prompt by any frontier model but this solution creates an easy way to just setup the functionality without wasting your usage. It is also kind of just for my learning too and familiarizing myself with MCP and supplementing my Go skill development.
 
-## Configuration
+## Available tools
 
-Set `LOCAL_FINANCE_DB_PATH` to an absolute path before starting the server:
+[See all available tools and what they are used for.](docs/TOOLS.md)
+
+## Quick start
+
+Requires Go 1.26 or newer.
 
 ```sh
-export LOCAL_FINANCE_DB_PATH=/Users/you/.local/share/local-ledger/finance.db
-go run ./cmd/local-ledger
+go run ./cmd/local-finance-mcp
 ```
 
-The database file is your finance ledger. Back it up using your normal file-backup process; the server does not provide a backup subsystem.
+The database is created at:
 
-## Tools
+```text
+~/LocalLedger/finance.db
+```
 
-The server exposes twenty-one finance tools:
+To use a different location:
 
-- `add_transaction`
-- `add_transactions`
-- `compare_months`
-- `create_category`
-- `list_categories`
-- `disable_category`
-- `rename_category`
-- `create_monthly_budget`
-- `set_budgets`
-- `set_known_merchant`
-- `rename_known_merchant`
-- `remove_known_merchant`
-- `list_known_merchants`
-- `list_transactions`
-- `list_top_merchants`
-- `update_transaction`
-- `remove_transaction`
-- `get_monthly_summary`
-- `get_monthly_series`
-- `get_category_summary`
-- `get_spending_summary`
+```sh
+LOCAL_FINANCE_DB_PATH=/absolute/path/finance.db go run ./cmd/local-finance-mcp
+```
+
+## Documentation
+
+- [Install, update, and backup](docs/INSTALL.md)
 
 ## Build
 
 ```sh
-go build ./cmd/local-ledger
+go build ./cmd/local-finance-mcp
 ```
 
 ## Test
