@@ -73,6 +73,26 @@ type spendingSummaryOutput struct {
 	Categories       []contract.SpendingSummaryCategory `json:"categories"`
 }
 
+type topMerchantsInput struct {
+	StartDate *string `json:"start_date,omitempty"`
+	EndDate   *string `json:"end_date,omitempty"`
+	Category  *string `json:"category,omitempty"`
+	Limit     *int64  `json:"limit,omitempty"`
+}
+
+type topMerchantsOutput struct {
+	OK               bool                        `json:"ok"`
+	StartDate        *string                     `json:"start_date"`
+	EndDate          *string                     `json:"end_date"`
+	Category         *string                     `json:"category"`
+	TotalSpending    string                      `json:"total_spending"`
+	TransactionCount int64                       `json:"transaction_count"`
+	Limit            int64                       `json:"limit"`
+	Returned         int64                       `json:"returned"`
+	MerchantCount    int64                       `json:"merchant_count"`
+	Merchants        []contract.MerchantSpending `json:"merchants"`
+}
+
 type summaryTools struct {
 	store  *summary.Store
 	logger *log.Logger
@@ -104,6 +124,12 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 		Description: "Total spending over an optional inclusive date range, with optional category and exact merchant filters. Does not require a monthly budget snapshot.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.getSpendingSummary)
+
+	mcp.AddTool[topMerchantsInput, any](srv, &mcp.Tool{
+		Name:        "list_top_merchants",
+		Description: "Rank merchants by spending over an optional inclusive date range, with an optional category filter and top-N limit. Does not require a monthly budget snapshot.",
+		Annotations: readOnlyToolAnnotations(),
+	}, tools.listTopMerchants)
 }
 
 func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolRequest, in monthlySummaryInput) (*mcp.CallToolResult, any, error) {
@@ -201,6 +227,38 @@ func (t *summaryTools) getSpendingSummary(ctx context.Context, _ *mcp.CallToolRe
 		TotalSpending:    result.TotalSpending,
 		TransactionCount: result.TransactionCount,
 		Categories:       categories,
+	})
+}
+
+func (t *summaryTools) listTopMerchants(ctx context.Context, _ *mcp.CallToolRequest, in topMerchantsInput) (*mcp.CallToolResult, any, error) {
+	result, fields, err := t.store.TopMerchants(ctx, summary.TopMerchantsInput{
+		StartDate: in.StartDate,
+		EndDate:   in.EndDate,
+		Category:  in.Category,
+		Limit:     in.Limit,
+	})
+	if len(fields) != 0 {
+		return toolError(invalidSummaryInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapSummaryError("list_top_merchants", err)
+	}
+
+	merchants := result.Merchants
+	if merchants == nil {
+		merchants = []contract.MerchantSpending{}
+	}
+	return toolOK(topMerchantsOutput{
+		OK:               true,
+		StartDate:        result.StartDate,
+		EndDate:          result.EndDate,
+		Category:         result.Category,
+		TotalSpending:    result.TotalSpending,
+		TransactionCount: result.TransactionCount,
+		Limit:            result.Limit,
+		Returned:         result.Returned,
+		MerchantCount:    result.MerchantCount,
+		Merchants:        merchants,
 	})
 }
 
