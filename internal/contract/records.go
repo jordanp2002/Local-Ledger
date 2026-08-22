@@ -98,3 +98,9 @@ type SpendingSummaryCategory struct {
 	Spending         string `json:"spending"`
 	TransactionCount int64  `json:"transaction_count"`
 }
+
+type MerchantSpending struct {
+	Merchant         string `json:"merchant"`
+	Spending         string `json:"spending"`
+	TransactionCount int64  `json:"transaction_count"`
+}
