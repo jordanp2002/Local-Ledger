@@ -60,6 +60,58 @@ func TestCreateCarryForwardCopiesImmediatelyPreviousMonthIndependently(t *testin
 	}
 }
 
+func TestCreateCarryForwardIntoPastMonthCopiesLatestEarlierSource(t *testing.T) {
+	ctx := context.Background()
+	store, categories, db := openBudgetStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	groceries := createCategory(t, ctx, categories, "Groceries")
+	insertBudget(t, ctx, db, groceries.ID, "2026-01", "80.00")
+	insertBudget(t, ctx, db, groceries.ID, "2026-07", "200.00")
+	julyBefore := listStoredBudgets(t, ctx, db, "2026-07")
+
+	result, fields, err := store.CreateCarryForward(ctx, "2026-03", nil)
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("CreateCarryForward(2026-03) = %#v fields %#v error %v", result, fields, err)
+	}
+	if result.Month != "2026-03" || result.SourceMonth == nil || *result.SourceMonth != "2026-01" {
+		t.Fatalf("result = %#v, want March copied from January", result)
+	}
+	if result.TotalBudget != "80.00" || len(result.Budgets) != 1 || result.Budgets[0].Amount != "80.00" {
+		t.Fatalf("copied snapshot = %#v, want January Groceries 80.00", result)
+	}
+	if got := countBudgetRows(t, ctx, db, "2026-03"); got != 1 {
+		t.Fatalf("March rows = %d, want 1", got)
+	}
+	if got := countBudgetRows(t, ctx, db, "2026-01"); got != 1 {
+		t.Fatalf("January rows = %d, want 1", got)
+	}
+	if !reflect.DeepEqual(listStoredBudgets(t, ctx, db, "2026-07"), julyBefore) {
+		t.Fatal("July changed after past-month carry-forward")
+	}
+}
+
+func TestCreateCarryForwardPastMonthWithOnlyLaterSourceIsNotFound(t *testing.T) {
+	ctx := context.Background()
+	store, categories, db := openBudgetStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
+	groceries := createCategory(t, ctx, categories, "Groceries")
+	insertBudget(t, ctx, db, groceries.ID, "2026-07", "200.00")
+	julyBefore := listStoredBudgets(t, ctx, db, "2026-07")
+
+	_, fields, err := store.CreateCarryForward(ctx, "2026-03", nil)
+	if len(fields) != 0 {
+		t.Fatalf("CreateCarryForward(2026-03) fields = %#v, want none", fields)
+	}
+	var missing *budget.SourceNotFoundError
+	if !errors.As(err, &missing) || missing.Month != "2026-03" {
+		t.Fatalf("CreateCarryForward(2026-03) error = %v, want SourceNotFoundError for 2026-03", err)
+	}
+	if got := countBudgetRows(t, ctx, db, "2026-03"); got != 0 {
+		t.Fatalf("March rows after missing earlier source = %d, want 0", got)
+	}
+	if !reflect.DeepEqual(listStoredBudgets(t, ctx, db, "2026-07"), julyBefore) {
+		t.Fatal("July changed after failed past-month carry-forward")
+	}
+}
+
 func TestCreateCarryForwardSkipsEmptyInterveningMonths(t *testing.T) {
 	ctx := context.Background()
 	store, categories, db := openBudgetStore(t, torontoTime(t, 2026, 4, 15, 12, 0))

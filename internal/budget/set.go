@@ -48,7 +48,7 @@ type setOperation struct {
 	created    bool
 }
 
-// Set edits allocations on an existing current-month snapshot.
+// Set edits allocations on an existing current or past month snapshot.
 func (s *Store) Set(ctx context.Context, month string, allocations []Allocation) (SetResult, []contract.FieldIssue, error) {
 	now := time.Now()
 	if s != nil && s.Now != nil {
@@ -173,11 +173,8 @@ func validateSet(month string, allocations []Allocation, now time.Time) ([]norma
 			Field:  "month",
 			Reason: "must be a valid YYYY-MM month",
 		})
-	} else if parsedMonth != localMonth(now) {
-		fields = append(fields, contract.FieldIssue{
-			Field:  "month",
-			Reason: "must equal the current local month",
-		})
+	} else if issue := futureMonthIssue(parsedMonth, now); issue != nil {
+		fields = append(fields, *issue)
 	}
 
 	if len(allocations) == 0 {
