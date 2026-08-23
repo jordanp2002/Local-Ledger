@@ -1,6 +1,3 @@
-<p align="center">
-  <img src="assets/local-ledger-logo.png" alt="Local Ledger logo" width="240">
-</p>
 
 # Local Ledger
 
