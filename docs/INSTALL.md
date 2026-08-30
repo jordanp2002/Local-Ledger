@@ -8,7 +8,7 @@ Requires Git and Go 1.26 or newer.
 git clone https://github.com/jordanp2002/local-finance-mcp.git
 cd local-finance-mcp
 mkdir -p "$HOME/LocalLedger/bin"
-go build -o "$HOME/LocalLedger/bin/local-finance-mcp" ./cmd/local-finance-mcp
+go build -o "$HOME/LocalLedger/bin/local-finance-mcp" ./cmd/local-ledger
 ```
 
 Run it once:
@@ -50,7 +50,7 @@ From the cloned repository:
 
 ```sh
 git pull --ff-only
-go build -o "$HOME/LocalLedger/bin/local-finance-mcp" ./cmd/local-finance-mcp
+go build -o "$HOME/LocalLedger/bin/local-finance-mcp" ./cmd/local-ledger
 ```
 
 Restart the MCP client after rebuilding. Database updates run automatically.

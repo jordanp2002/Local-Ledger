@@ -17,4 +17,4 @@ jobs:
           go-version: "1.26.x"
           cache: true
       - run: go test ./...
-      - run: go build ./cmd/local-finance-mcp
+      - run: go build ./cmd/local-ledger
