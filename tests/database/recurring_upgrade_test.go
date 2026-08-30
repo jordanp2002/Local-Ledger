@@ -107,7 +107,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		VALUES (?, ?, ?, ?)
 	`, " Netflix ", 1000, categoryID, 1)
 
-	// Non-positive or non-integer amount
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month)
 		VALUES (?, ?, ?, ?)
@@ -180,7 +179,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		INSERT INTO recurring_transaction_runs (recurring_transaction_id, month, transaction_id)
 		VALUES (?, ?, ?)
 	`, int64(999999), "2026-09", transactionID)
-
 
 	if _, err := db.ExecContext(ctx, `DELETE FROM transactions WHERE id = ?`, transactionID); err != nil {
 		t.Fatalf("delete transaction: %v", err)

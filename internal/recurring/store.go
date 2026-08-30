@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrNotFound         = errors.New("recurring transaction not found")
-	ErrCategoryNotFound = errors.New("category not found")
-	ErrCategoryInactive = errors.New("category inactive")
+	ErrNotFound                  = errors.New("recurring transaction not found")
+	ErrCategoryNotFound          = errors.New("category not found")
+	ErrCategoryInactive          = errors.New("category inactive")
+	ErrRecurringCategoryInactive = errors.New("recurring category inactive")
 )
 
 type queryer interface {
@@ -37,6 +38,7 @@ type Service interface {
 	List(context.Context) ([]contract.RecurringTransaction, error)
 	Disable(context.Context, int64) (DisableResult, []contract.FieldIssue, error)
 	PreviewDue(context.Context) (PreviewDueResult, error)
+	MaterializeDue(context.Context) (MaterializeDueResult, error)
 }
 
 func (s *Store) timestamp() (string, error) {
@@ -72,6 +74,32 @@ type PreviewDueResult struct {
 	TotalAmount     string
 	DueTransactions []contract.DueTransaction
 	Blocked         []contract.BlockedDueTransaction
+}
+
+type MaterializeDueResult struct {
+	AsOfDate     string
+	Month        string
+	Created      int64
+	TotalAmount  string
+	Transactions []contract.Transaction
+}
+
+type RecurringCategoryInactiveError struct {
+	RecurringTransactionID int64
+	Merchant               string
+	Category               string
+	DueDate                string
+}
+
+func (e *RecurringCategoryInactiveError) Error() string {
+	if e == nil {
+		return ErrRecurringCategoryInactive.Error()
+	}
+	return fmt.Sprintf("recurring transaction %d for %q references inactive category %q", e.RecurringTransactionID, e.Merchant, e.Category)
+}
+
+func (e *RecurringCategoryInactiveError) Is(target error) bool {
+	return target == ErrRecurringCategoryInactive
 }
 
 // NotFoundError identifies a missing recurring transaction ID.
