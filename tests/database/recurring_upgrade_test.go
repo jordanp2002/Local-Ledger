@@ -46,7 +46,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		t.Fatal("recurring tables were not created")
 	}
 
-	// Verify preservation of existing records across upgrade
 	var categoryName, merchant string
 	if err := db.QueryRowContext(ctx, "SELECT name FROM categories WHERE id = ?", categoryID).Scan(&categoryName); err != nil {
 		t.Fatalf("preserved category: %v", err)
@@ -72,7 +71,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		t.Fatalf("preserved known merchant = %q, want Netflix", knownMerchant)
 	}
 
-	// Valid recurring template creation and default checks
 	result, err := db.ExecContext(ctx, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month, note)
 		VALUES (?, ?, ?, ?, ?)
@@ -96,8 +94,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 
 	assertAmountStorageType(t, ctx, db, "recurring_transactions", tmplID, "integer")
 
-	// Table constraints on recurring_transactions
-	// Empty or whitespace merchant
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month)
 		VALUES (?, ?, ?, ?)
@@ -125,7 +121,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		VALUES (?, CAST(? AS REAL), ?, ?)
 	`, "Spotify", 10.5, categoryID, 1)
 
-	// Invalid day_of_month (< 1 or > 31)
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month)
 		VALUES (?, ?, ?, ?)
@@ -139,13 +134,11 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		VALUES (?, ?, ?, ?)
 	`, "Spotify", 1000, categoryID, -5)
 
-	// Invalid foreign key for category_id
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month)
 		VALUES (?, ?, ?, ?)
 	`, "Spotify", 1000, int64(999999), 1)
 
-	// Invalid active flag
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month, active)
 		VALUES (?, ?, ?, ?, ?)
@@ -155,7 +148,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		VALUES (?, ?, ?, ?, ?)
 	`, "Spotify", 1000, categoryID, 1, -1)
 
-	// Identical template is allowed
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO recurring_transactions (merchant, amount_hundredths, category_id, day_of_month, note)
 		VALUES (?, ?, ?, ?, ?)
@@ -163,8 +155,6 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		t.Fatalf("identical template should be allowed: %v", err)
 	}
 
-	// Constraints on recurring_transaction_runs
-	// Valid insertion
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO recurring_transaction_runs (recurring_transaction_id, month, transaction_id)
 		VALUES (?, ?, ?)
@@ -172,13 +162,11 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		t.Fatalf("insert recurring run: %v", err)
 	}
 
-	// Duplicate run for same (recurring_transaction_id, month) is rejected
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transaction_runs (recurring_transaction_id, month, transaction_id)
 		VALUES (?, ?, ?)
 	`, tmplID, "2026-08", transactionID)
 
-	// Invalid month format
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transaction_runs (recurring_transaction_id, month, transaction_id)
 		VALUES (?, ?, ?)
@@ -188,13 +176,12 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 		VALUES (?, ?, ?)
 	`, tmplID, "2026-13", transactionID)
 
-	// Foreign key: non-existent recurring_transaction_id
 	expectExecError(t, ctx, db, `
 		INSERT INTO recurring_transaction_runs (recurring_transaction_id, month, transaction_id)
 		VALUES (?, ?, ?)
 	`, int64(999999), "2026-09", transactionID)
 
-	// Foreign key: delete transaction sets transaction_id to NULL
+
 	if _, err := db.ExecContext(ctx, `DELETE FROM transactions WHERE id = ?`, transactionID); err != nil {
 		t.Fatalf("delete transaction: %v", err)
 	}
@@ -207,7 +194,5 @@ func TestMigrateRecurringTransactionsUpgradePreservesRowsAndConstraints(t *testi
 	if runTxID.Valid {
 		t.Fatalf("transaction_id after delete = %d, want NULL", runTxID.Int64)
 	}
-
-	// Foreign key on recurring_transactions: cannot delete template with runs (RESTRICT)
 	expectExecError(t, ctx, db, `DELETE FROM recurring_transactions WHERE id = ?`, tmplID)
 }

@@ -55,6 +55,18 @@ func mustDisableCategory(t *testing.T, ctx context.Context, store *category.Stor
 	return cat
 }
 
+func mustCreateRecurring(t *testing.T, ctx context.Context, store *recurring.Store, in recurring.CreateInput) recurring.CreateResult {
+	t.Helper()
+	result, issues, err := store.Create(ctx, in)
+	if err != nil {
+		t.Fatalf("Create(%q) error = %v", in.Merchant, err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("Create(%q) unexpected field issues = %v", in.Merchant, issues)
+	}
+	return result
+}
+
 func stringPointer(s string) *string {
 	return &s
 }

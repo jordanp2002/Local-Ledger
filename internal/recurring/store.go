@@ -36,6 +36,7 @@ type Service interface {
 	Create(context.Context, CreateInput) (CreateResult, []contract.FieldIssue, error)
 	List(context.Context) ([]contract.RecurringTransaction, error)
 	Disable(context.Context, int64) (DisableResult, []contract.FieldIssue, error)
+	PreviewDue(context.Context) (PreviewDueResult, error)
 }
 
 func (s *Store) timestamp() (string, error) {
@@ -63,6 +64,14 @@ type CreateResult struct {
 type DisableResult struct {
 	RecurringTransaction contract.RecurringTransaction
 	Changed              bool
+}
+
+type PreviewDueResult struct {
+	AsOfDate        string
+	Month           string
+	TotalAmount     string
+	DueTransactions []contract.DueTransaction
+	Blocked         []contract.BlockedDueTransaction
 }
 
 // NotFoundError identifies a missing recurring transaction ID.

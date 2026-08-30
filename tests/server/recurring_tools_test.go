@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -12,7 +13,6 @@ import (
 func TestCreateRecurringTransactionToolSuccess(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
 
-	// Create active category first
 	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
 
 	result := callTool(t, session, "create_recurring_transaction", map[string]any{
@@ -139,7 +139,6 @@ func TestCreateRecurringTransactionToolCategoryInactive(t *testing.T) {
 func TestListRecurringTransactionsTool(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
 
-	// List on empty database
 	resultEmpty := callTool(t, session, "list_recurring_transactions", map[string]any{})
 	if resultEmpty.IsError {
 		t.Fatalf("list_recurring_transactions error: %s", structuredJSON(t, resultEmpty))
@@ -180,7 +179,6 @@ func TestListRecurringTransactionsTool(t *testing.T) {
 		t.Fatalf("recurring_transactions = %v, want 2 templates", gotPopulated["recurring_transactions"])
 	}
 
-	// First should be Rent (day 1), second Spotify (day 15)
 	first := itemsPopulated[0].(map[string]any)
 	if first["merchant"] != "Rent" {
 		t.Errorf("first merchant = %v, want Rent", first["merchant"])
@@ -214,7 +212,7 @@ func TestDisableRecurringTransactionTool(t *testing.T) {
 		id = n
 	}
 
-	// First disable -> changed: true
+
 	disableRes1 := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": id})
 	if disableRes1.IsError {
 		t.Fatalf("disable_recurring_transaction error: %s", structuredJSON(t, disableRes1))
@@ -228,7 +226,6 @@ func TestDisableRecurringTransactionTool(t *testing.T) {
 		t.Errorf("active = %v, want false", afterDisable["active"])
 	}
 
-	// Repeated disable -> changed: false
 	disableRes2 := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": id})
 	if disableRes2.IsError {
 		t.Fatalf("repeated disable_recurring_transaction error: %s", structuredJSON(t, disableRes2))
@@ -238,7 +235,6 @@ func TestDisableRecurringTransactionTool(t *testing.T) {
 		t.Fatalf("repeated disable response = %v, want ok=true, changed=false", disableObj2)
 	}
 
-	// Disable missing ID -> recurring_transaction_not_found
 	missingRes := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": 999999})
 	if !missingRes.IsError {
 		t.Fatal("disable missing ID IsError = false, want true")
@@ -248,7 +244,6 @@ func TestDisableRecurringTransactionTool(t *testing.T) {
 		t.Fatalf("error code = %q, want %q", missingEnvelope.Error.Code, contract.ErrorCodeRecurringTransactionNotFound)
 	}
 
-	// Disable invalid ID (0 or negative) -> invalid_input
 	invalidRes := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": 0})
 	if !invalidRes.IsError {
 		t.Fatal("disable invalid ID IsError = false, want true")
@@ -263,7 +258,6 @@ func TestRecurringToolsInternalErrorRedaction(t *testing.T) {
 	db := openCategoryDB(t)
 	session := connectCategorySession(t, db, time.Now, nil)
 
-	// Close underlying database connection to force internal error
 	db.Close()
 
 	result := callTool(t, session, "create_recurring_transaction", map[string]any{
@@ -272,6 +266,162 @@ func TestRecurringToolsInternalErrorRedaction(t *testing.T) {
 		"category":     "Entertainment",
 		"day_of_month": 15,
 	})
+	if !result.IsError {
+		t.Fatal("IsError = false, want true for closed database")
+	}
+
+	envelope := decodeRecurringErrorEnvelope(t, result)
+	if envelope.Error.Code != contract.ErrorCodeInternalError {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, contract.ErrorCodeInternalError)
+	}
+	raw := structuredJSON(t, result)
+	if leakedInternalError(raw) {
+		t.Fatalf("internal error leaked driver details: %s", raw)
+	}
+}
+
+func TestPreviewDueTransactionsToolDiscoveryAndSchema(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+
+	result, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	tool := toolByName(t, result.Tools, "preview_due_transactions")
+	if tool == nil {
+		t.Fatal("preview_due_transactions is not discoverable")
+	}
+	schema := schemaObject(t, tool.InputSchema)
+	if schema["type"] != "object" {
+		t.Fatalf("preview_due_transactions input schema type = %v, want object", schema["type"])
+	}
+	required, _ := schema["required"].([]any)
+	if len(required) != 0 {
+		t.Fatalf("preview_due_transactions required = %v, want no required fields", required)
+	}
+	if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+		t.Fatalf("annotations = %#v, want read-only", tool.Annotations)
+	}
+	if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
+		t.Fatalf("openWorldHint = %v, want false", tool.Annotations.OpenWorldHint)
+	}
+	if tool.Annotations.DestructiveHint != nil {
+		t.Fatalf("destructiveHint = %v, want omitted for read-only tool", *tool.Annotations.DestructiveHint)
+	}
+}
+
+func TestPreviewDueTransactionsToolEmpty(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+
+	result := callTool(t, session, "preview_due_transactions", map[string]any{})
+	if result.IsError {
+		t.Fatalf("preview_due_transactions IsError = true, want success: %s", structuredJSON(t, result))
+	}
+
+	got := structuredObject(t, result)
+	if got["ok"] != true {
+		t.Fatalf("ok = %v, want true", got["ok"])
+	}
+	if got["as_of_date"] != "2026-08-15" {
+		t.Errorf("as_of_date = %v, want 2026-08-15", got["as_of_date"])
+	}
+
+	if got["month"] != "2026-08" {
+		t.Errorf("month = %v, want 2026-08", got["month"])
+	}
+	if got["total_amount"] != "0.00" {
+		t.Errorf("total_amount = %v, want 0.00", got["total_amount"])
+	}
+	due, ok := got["due_transactions"].([]any)
+	if !ok || len(due) != 0 {
+		t.Fatalf("due_transactions = %v, want empty array", got["due_transactions"])
+	}
+	blocked, ok := got["blocked"].([]any)
+	if !ok || len(blocked) != 0 {
+		t.Fatalf("blocked = %v, want empty array", got["blocked"])
+	}
+}
+
+func TestPreviewDueTransactionsToolSuccessWithDueAndBlocked(t *testing.T) {
+	toronto := time.FixedZone("EDT", -4*60*60)
+	now := func() time.Time { return time.Date(2026, 8, 30, 10, 0, 0, 0, toronto) }
+	session := connectCategorySession(t, openCategoryDB(t), now, nil)
+
+	callTool(t, session, "create_category", map[string]any{"name": "Housing"})
+	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
+	callTool(t, session, "create_category", map[string]any{"name": "Fitness"})
+
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Rent",
+		"amount":       "1500.00",
+		"category":     "Housing",
+		"day_of_month": 1,
+	})
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+		"note":         "Monthly subscription",
+	})
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Gym",
+		"amount":       "50.00",
+		"category":     "Fitness",
+		"day_of_month": 10,
+	})
+	callTool(t, session, "disable_category", map[string]any{"name": "Fitness"})
+
+	result := callTool(t, session, "preview_due_transactions", map[string]any{})
+	if result.IsError {
+		t.Fatalf("preview_due_transactions IsError = true, want success: %s", structuredJSON(t, result))
+	}
+
+	got := structuredObject(t, result)
+	if got["ok"] != true {
+		t.Fatalf("ok = %v, want true", got["ok"])
+	}
+	if got["as_of_date"] != "2026-08-30" {
+		t.Errorf("as_of_date = %v, want 2026-08-30", got["as_of_date"])
+	}
+	if got["month"] != "2026-08" {
+		t.Errorf("month = %v, want 2026-08", got["month"])
+	}
+	if got["total_amount"] != "1522.99" {
+		t.Errorf("total_amount = %v, want 1522.99", got["total_amount"])
+	}
+
+	due, ok := got["due_transactions"].([]any)
+	if !ok || len(due) != 2 {
+		t.Fatalf("due_transactions = %v, want 2 due rows", got["due_transactions"])
+	}
+	rent := due[0].(map[string]any)
+	if rent["merchant"] != "Rent" || rent["amount"] != "1500.00" || rent["due_date"] != "2026-08-01" || rent["note"] != nil {
+		t.Errorf("rent = %v", rent)
+	}
+	netflix := due[1].(map[string]any)
+	if netflix["merchant"] != "Netflix" || netflix["amount"] != "22.99" || netflix["due_date"] != "2026-08-15" || netflix["note"] != "Monthly subscription" {
+		t.Errorf("netflix = %v", netflix)
+	}
+
+	blocked, ok := got["blocked"].([]any)
+	if !ok || len(blocked) != 1 {
+		t.Fatalf("blocked = %v, want 1 blocked row", got["blocked"])
+	}
+	gym := blocked[0].(map[string]any)
+	if gym["merchant"] != "Gym" || gym["category"] != "Fitness" || gym["due_date"] != "2026-08-10" || gym["reason"] != "category_inactive" {
+		t.Errorf("gym = %v", gym)
+	}
+}
+
+func TestPreviewDueTransactionsToolClosedDB(t *testing.T) {
+	db := openCategoryDB(t)
+	session := connectCategorySession(t, db, time.Now, nil)
+
+	db.Close()
+
+	result := callTool(t, session, "preview_due_transactions", map[string]any{})
 	if !result.IsError {
 		t.Fatal("IsError = false, want true for closed database")
 	}
