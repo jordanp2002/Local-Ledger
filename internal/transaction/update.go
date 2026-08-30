@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
@@ -17,6 +18,7 @@ type validatedUpdate struct {
 	category         *string
 	date             *string
 	note             *sql.NullString
+	allocations      *[]AllocationInput
 }
 
 // Update patches one existing transaction. It never reads or writes
@@ -52,7 +54,7 @@ func validateUpdate(in UpdateInput, now time.Time) (validatedUpdate, []contract.
 		in.Merchant != nil || in.MerchantNull ||
 		in.Category != nil || in.CategoryNull ||
 		in.Date != nil || in.DateNull ||
-		in.Note.Present
+		in.Note.Present || in.Allocations != nil || in.AllocationsNull
 	if !hasMutable {
 		fields = append(fields, contract.FieldIssue{
 			Field:  "id",
@@ -112,6 +114,49 @@ func validateUpdate(in UpdateInput, now time.Time) (validatedUpdate, []contract.
 		}
 	}
 
+	if in.AllocationsNull {
+		fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "must not be null"})
+	} else if in.Allocations != nil {
+		if in.Amount != nil || in.AmountNull {
+			fields = append(fields, contract.FieldIssue{Field: "amount", Reason: "cannot be supplied with allocations"})
+		}
+		if in.Category != nil || in.CategoryNull {
+			fields = append(fields, contract.FieldIssue{Field: "category", Reason: "cannot be supplied with allocations"})
+		}
+		if len(*in.Allocations) == 0 {
+			fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "must contain at least one item"})
+		} else {
+			validated.allocations = in.Allocations
+			var total int64
+			seen := make(map[string]struct{}, len(*in.Allocations))
+			for i, allocation := range *in.Allocations {
+				category, issue := validateCategoryName(allocation.Category)
+				if issue != nil {
+					issue.Field = fmt.Sprintf("allocations[%d].category", i)
+					fields = append(fields, *issue)
+				} else {
+					key := strings.ToLower(category)
+					if _, exists := seen[key]; exists {
+						fields = append(fields, contract.FieldIssue{Field: fmt.Sprintf("allocations[%d].category", i), Reason: "must not repeat a category"})
+					}
+					seen[key] = struct{}{}
+				}
+				amount, amountIssue := validateAmount(allocation.Amount)
+				if amountIssue != nil {
+					amountIssue.Field = fmt.Sprintf("allocations[%d].amount", i)
+					fields = append(fields, *amountIssue)
+					continue
+				}
+				next, ok := checkedAdd(total, amount)
+				if !ok {
+					fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "total must fit the supported amount range"})
+				} else {
+					total = next
+				}
+			}
+		}
+	}
+
 	return validated, fields
 }
 
@@ -135,26 +180,9 @@ func (s *Store) update(ctx context.Context, in validatedUpdate) (UpdateResult, [
 		merchant = *in.merchant
 	}
 
-	amountHundredths, err := contract.ParseAmount(loaded.Amount)
-	if err != nil {
-		return UpdateResult{}, nil, err
-	}
-	if in.amountHundredths != nil {
-		amountHundredths = *in.amountHundredths
-	}
-
 	date := loaded.Date
 	if in.date != nil {
 		date = *in.date
-	}
-
-	categoryID := loaded.CategoryID
-	if in.category != nil {
-		category, err := resolveActiveCategory(ctx, tx, *in.category)
-		if err != nil {
-			return UpdateResult{}, nil, err
-		}
-		categoryID = category.ID
 	}
 
 	note := sql.NullString{}
@@ -165,16 +193,61 @@ func (s *Store) update(ctx context.Context, in validatedUpdate) (UpdateResult, [
 		note = *in.note
 	}
 
+	if in.allocations == nil && (in.amountHundredths != nil || in.category != nil) && len(loaded.Allocations) > 1 {
+		return UpdateResult{}, nil, &SplitTransactionRequiresAllocationsError{ID: in.id}
+	}
+
+	var replacement []validatedAllocation
+	if in.allocations != nil {
+		replacement, err = resolveSplitAllocations(ctx, tx, *in.allocations)
+		if err != nil {
+			return UpdateResult{}, nil, err
+		}
+	}
+
+	if in.allocations == nil && len(loaded.Allocations) == 1 {
+		currentAmount, parseErr := contract.ParseAmount(loaded.Allocations[0].Amount)
+		if parseErr != nil {
+			return UpdateResult{}, nil, parseErr
+		}
+		newAmount := currentAmount
+		if in.amountHundredths != nil {
+			newAmount = *in.amountHundredths
+		}
+		newCategoryID := loaded.Allocations[0].CategoryID
+		if in.category != nil {
+			category, resolveErr := resolveActiveCategory(ctx, tx, *in.category)
+			if resolveErr != nil {
+				return UpdateResult{}, nil, resolveErr
+			}
+			newCategoryID = category.ID
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE transaction_allocations
+			SET category_id = ?, amount_hundredths = ?
+			WHERE transaction_id = ?
+		`, newCategoryID, newAmount, in.id); err != nil {
+			return UpdateResult{}, nil, err
+		}
+	}
+	if in.allocations != nil && !sameAllocations(loaded.Allocations, replacement) {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM transaction_allocations WHERE transaction_id = ?`, in.id); err != nil {
+			return UpdateResult{}, nil, err
+		}
+		for _, allocation := range replacement {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+				VALUES (?, ?, ?)
+			`, in.id, allocation.categoryID, allocation.amount); err != nil {
+				return UpdateResult{}, nil, err
+			}
+		}
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE transactions
-		SET merchant = ?,
-		    amount_hundredths = ?,
-		    date = ?,
-		    category_id = ?,
-		    note = ?,
-		    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		SET merchant = ?, date = ?, note = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 		WHERE id = ?
-	`, merchant, amountHundredths, date, categoryID, note, in.id)
+	`, merchant, date, note, in.id)
 	if err != nil {
 		return UpdateResult{}, nil, err
 	}
@@ -194,4 +267,25 @@ func (s *Store) update(ctx context.Context, in validatedUpdate) (UpdateResult, [
 		return UpdateResult{}, nil, err
 	}
 	return UpdateResult{Transaction: recorded}, nil, nil
+}
+
+func sameAllocations(existing []contract.TransactionAllocation, replacement []validatedAllocation) bool {
+	if len(existing) != len(replacement) {
+		return false
+	}
+	existingByCategory := make(map[int64]string, len(existing))
+	for _, allocation := range existing {
+		existingByCategory[allocation.CategoryID] = allocation.Amount
+	}
+	for _, allocation := range replacement {
+		amountText, found := existingByCategory[allocation.categoryID]
+		if !found {
+			return false
+		}
+		amount, err := contract.ParseAmount(amountText)
+		if err != nil || amount != allocation.amount {
+			return false
+		}
+	}
+	return true
 }

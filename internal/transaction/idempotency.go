@@ -98,12 +98,7 @@ func replayIdempotencyRecord(ctx context.Context, q rowQueryer, key, fingerprint
 		}
 	}
 
-	recorded, err := scanTransaction(q.QueryRowContext(ctx, `
-		SELECT `+transactionColumns+`
-		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id
-		WHERE t.id = ?
-	`, existing.transactionID.Int64))
+	recorded, err := loadTransaction(ctx, q, existing.transactionID.Int64)
 	if err != nil {
 		return AddResult{}, err
 	}

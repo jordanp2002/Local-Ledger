@@ -37,7 +37,10 @@ type Service interface {
 	Create(context.Context, CreateInput) (CreateResult, []contract.FieldIssue, error)
 	List(context.Context) ([]contract.RecurringTransaction, error)
 	Disable(context.Context, int64) (DisableResult, []contract.FieldIssue, error)
+	Update(context.Context, UpdateInput) (UpdateResult, []contract.FieldIssue, error)
+	Enable(context.Context, int64) (EnableResult, []contract.FieldIssue, error)
 	PreviewDue(context.Context) (PreviewDueResult, error)
+	PreviewUpcoming(context.Context) (PreviewUpcomingResult, error)
 	MaterializeDue(context.Context) (MaterializeDueResult, error)
 }
 

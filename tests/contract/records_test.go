@@ -51,8 +51,8 @@ func TestTransactionJSONShapeUsesExplicitNullNote(t *testing.T) {
 		Amount:     "20.00",
 		Merchant:   "Metro",
 		Date:       "2026-08-14",
-		CategoryID: 1,
-		Category:   "Groceries",
+		CategoryID: int64Ptr(1),
+		Category:   stringPtr("Groceries"),
 		Note:       nil,
 		CreatedAt:  "2026-08-14T14:30:00Z",
 		UpdatedAt:  "2026-08-14T14:30:00Z",
@@ -61,7 +61,7 @@ func TestTransactionJSONShapeUsesExplicitNullNote(t *testing.T) {
 		t.Fatalf("marshal transaction: %v", err)
 	}
 
-	want := `{"id":1,"amount":"20.00","merchant":"Metro","date":"2026-08-14","category_id":1,"category":"Groceries","note":null,"created_at":"2026-08-14T14:30:00Z","updated_at":"2026-08-14T14:30:00Z"}`
+	want := `{"id":1,"amount":"20.00","merchant":"Metro","date":"2026-08-14","category_id":1,"category":"Groceries","note":null,"allocations":null,"created_at":"2026-08-14T14:30:00Z","updated_at":"2026-08-14T14:30:00Z"}`
 	if string(got) != want {
 		t.Fatalf("transaction JSON = %s, want %s", got, want)
 	}
@@ -93,10 +93,14 @@ func TestTransactionJSONShapePreservesNonNullNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal transaction: %v", err)
 	}
-	if string(got) != `{"id":0,"amount":"","merchant":"","date":"","category_id":0,"category":"","note":"Weekly groceries","created_at":"","updated_at":""}` {
+	if string(got) != `{"id":0,"amount":"","merchant":"","date":"","category_id":null,"category":null,"note":"Weekly groceries","allocations":null,"created_at":"","updated_at":""}` {
 		t.Fatalf("transaction JSON = %s, want note string and all fields", got)
 	}
 }
+
+func int64Ptr(value int64) *int64 { return &value }
+
+func stringPtr(value string) *string { return &value }
 
 func TestRecurringTransactionJSONShape(t *testing.T) {
 	got, err := json.Marshal(contract.RecurringTransaction{

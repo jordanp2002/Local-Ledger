@@ -21,7 +21,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var categoryToolNames = []string{"add_transaction", "add_transactions", "compare_months", "create_category", "create_monthly_budget", "create_recurring_transaction", "disable_category", "disable_recurring_transaction", "get_category_summary", "get_monthly_series", "get_monthly_summary", "get_spending_summary", "list_categories", "list_known_merchants", "list_recurring_transactions", "list_top_merchants", "list_transactions", "materialize_due_transactions", "preview_due_transactions", "remove_known_merchant", "remove_transaction", "rename_category", "rename_known_merchant", "set_budgets", "set_known_merchant", "update_transaction"}
+var categoryToolNames = []string{"add_split_transaction", "add_transaction", "add_transactions", "compare_months", "create_category", "create_monthly_budget", "create_recurring_transaction", "disable_category", "disable_recurring_transaction", "enable_recurring_transaction", "get_category_summary", "get_monthly_series", "get_monthly_summary", "get_spending_summary", "list_categories", "list_known_merchants", "list_recurring_transactions", "list_top_merchants", "list_transactions", "materialize_due_transactions", "preview_due_transactions", "preview_upcoming_transactions", "remove_known_merchant", "remove_transaction", "rename_category", "rename_known_merchant", "set_budgets", "set_known_merchant", "update_recurring_transaction", "update_transaction"}
 
 func TestCategoryToolDiscovery(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)

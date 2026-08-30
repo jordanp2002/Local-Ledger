@@ -32,6 +32,19 @@ type addTransactionOutput struct {
 	IdempotentReplay      bool                 `json:"idempotent_replay"`
 }
 
+type addSplitTransactionInput struct {
+	Merchant       string                    `json:"merchant"`
+	Date           *string                   `json:"date,omitempty"`
+	Note           *string                   `json:"note,omitempty"`
+	Allocations    []addSplitAllocationInput `json:"allocations"`
+	IdempotencyKey *string                   `json:"idempotency_key,omitempty"`
+}
+
+type addSplitAllocationInput struct {
+	Category string `json:"category"`
+	Amount   string `json:"amount"`
+}
+
 type addTransactionsInput struct {
 	IdempotencyKey string                    `json:"idempotency_key"`
 	Transactions   []addTransactionsRowInput `json:"transactions"`
@@ -61,12 +74,18 @@ type addTransactionsOutput struct {
 }
 
 type updateTransactionInput struct {
-	ID       int64   `json:"id"`
-	Amount   *string `json:"amount,omitempty"`
-	Merchant *string `json:"merchant,omitempty"`
-	Category *string `json:"category,omitempty"`
-	Date     *string `json:"date,omitempty"`
-	Note     *string `json:"note,omitempty"`
+	ID          int64                    `json:"id"`
+	Amount      *string                  `json:"amount,omitempty"`
+	Merchant    *string                  `json:"merchant,omitempty"`
+	Category    *string                  `json:"category,omitempty"`
+	Date        *string                  `json:"date,omitempty"`
+	Note        *string                  `json:"note,omitempty"`
+	Allocations *[]updateAllocationInput `json:"allocations,omitempty"`
+}
+
+type updateAllocationInput struct {
+	Category string `json:"category"`
+	Amount   string `json:"amount"`
 }
 
 type updateTransactionOutput struct {
@@ -112,6 +131,12 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 		Annotations: writableToolAnnotations(true, false),
 	}, tools.addTransaction)
 
+	mcp.AddTool[addSplitTransactionInput, any](srv, &mcp.Tool{
+		Name:        "add_split_transaction",
+		Description: "Record one confirmed purchase across two or more active categories as one transaction. Allocation amounts must be positive and their checked sum is the transaction amount. An optional idempotency_key makes an exact retry return the original purchase; split purchases never create or replace a merchant default.",
+		Annotations: writableToolAnnotations(true, false),
+	}, tools.addSplitTransaction)
+
 	mcp.AddTool[addTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "add_transactions",
 		Description: addTransactionsDescription,
@@ -153,6 +178,33 @@ func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRe
 		return t.mapTransactionError("add_transaction", err)
 	}
 
+	return toolOK(addTransactionOutput{
+		OK:                    true,
+		Transaction:           result.Transaction,
+		CategorySource:        result.CategorySource,
+		MerchantMappingAction: result.MerchantMappingAction,
+		IdempotentReplay:      result.IdempotentReplay,
+	})
+}
+
+func (t *transactionTools) addSplitTransaction(ctx context.Context, _ *mcp.CallToolRequest, in addSplitTransactionInput) (*mcp.CallToolResult, any, error) {
+	allocations := make([]transaction.AllocationInput, len(in.Allocations))
+	for i, allocation := range in.Allocations {
+		allocations[i] = transaction.AllocationInput{Category: allocation.Category, Amount: allocation.Amount}
+	}
+	result, fields, err := t.store.AddSplit(ctx, transaction.AddSplitInput{
+		Merchant:       in.Merchant,
+		Date:           in.Date,
+		Note:           in.Note,
+		Allocations:    allocations,
+		IdempotencyKey: in.IdempotencyKey,
+	})
+	if len(fields) != 0 {
+		return toolError(invalidTransactionInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapTransactionError("add_split_transaction", err)
+	}
 	return toolOK(addTransactionOutput{
 		OK:                    true,
 		Transaction:           result.Transaction,
@@ -345,6 +397,16 @@ func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.Cal
 		)))
 	}
 
+	var split *transaction.SplitTransactionRequiresAllocationsError
+	if errors.As(err, &split) {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeSplitTransactionRequiresAllocations,
+			"This split transaction must be updated by supplying its complete allocations.",
+			false,
+			map[string]any{"id": split.ID},
+		)))
+	}
+
 	return t.internalError(tool, err)
 }
 
@@ -447,6 +509,17 @@ func updateInputFromRequest(req *mcp.CallToolRequest, in updateTransactionInput)
 			out.Note = transaction.NotePatch{Present: true}
 		} else {
 			out.Note = transaction.NotePatch{Present: true, Value: in.Note}
+		}
+	}
+	if raw, ok := args["allocations"]; ok {
+		if isJSONNull(raw) {
+			out.AllocationsNull = true
+		} else {
+			allocations := make([]transaction.AllocationInput, len(*in.Allocations))
+			for i, allocation := range *in.Allocations {
+				allocations[i] = transaction.AllocationInput{Category: allocation.Category, Amount: allocation.Amount}
+			}
+			out.Allocations = &allocations
 		}
 	}
 	return out, nil

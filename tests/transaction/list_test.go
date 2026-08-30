@@ -81,7 +81,7 @@ func TestListUnfilteredIncludesInactiveCategoryRows(t *testing.T) {
 	if !reflect.DeepEqual(transactionIDs(result.Transactions), []int64{active.ID, inactive.ID}) {
 		t.Fatalf("unfiltered IDs = %v, want active then inactive-category row", transactionIDs(result.Transactions))
 	}
-	if result.Transactions[1].Category != "Dining" || result.Transactions[1].CategoryID != inactive.CategoryID {
+	if transactionCategory(result.Transactions[1]) != "Dining" || transactionCategoryID(result.Transactions[1]) != *inactive.CategoryID {
 		t.Fatalf("inactive-category row = %#v, want stored Dining spelling", result.Transactions[1])
 	}
 	if result.Transactions[0].Note == nil || *result.Transactions[0].Note != "weekly" {
@@ -176,7 +176,7 @@ func TestListCategoryLookupIsCaseInsensitiveAndPreservesStoredSpelling(t *testin
 	if result.Page.Total != 1 || result.Transactions[0].ID != stored.ID {
 		t.Fatalf("case-insensitive list = %#v, want stored row", result)
 	}
-	if result.Transactions[0].Category != "Groceries" || result.Transactions[0].CategoryID != stored.CategoryID {
+	if transactionCategory(result.Transactions[0]) != "Groceries" || transactionCategoryID(result.Transactions[0]) != *stored.CategoryID {
 		t.Fatalf("returned category = %#v, want stored Groceries spelling", result.Transactions[0])
 	}
 }
@@ -224,7 +224,7 @@ func TestListInactiveCategoryFilterSucceeds(t *testing.T) {
 	if errors.Is(err, transaction.ErrCategoryInactive) {
 		t.Fatal("inactive category filter returned category_inactive")
 	}
-	if result.Page.Total != 1 || result.Transactions[0].ID != historical.ID || result.Transactions[0].Category != "Dining" {
+	if result.Page.Total != 1 || result.Transactions[0].ID != historical.ID || transactionCategory(result.Transactions[0]) != "Dining" {
 		t.Fatalf("inactive filter = %#v, want historical Dining row", result)
 	}
 }
@@ -438,7 +438,7 @@ func TestListAugustGroceriesExcludesDining(t *testing.T) {
 	if !reflect.DeepEqual(transactionIDs(result.Transactions), []int64{inRange.ID}) {
 		t.Fatalf("August Groceries IDs = %v, want only in-range Groceries", transactionIDs(result.Transactions))
 	}
-	if result.Transactions[0].Category != "Groceries" || result.Transactions[0].Merchant != "Metro" {
+	if transactionCategory(result.Transactions[0]) != "Groceries" || result.Transactions[0].Merchant != "Metro" {
 		t.Fatalf("filtered row = %#v, want Metro/Groceries", result.Transactions[0])
 	}
 }
@@ -506,7 +506,7 @@ func TestListReturnsCanonicalJoinedRecords(t *testing.T) {
 	if got.ID != created.ID || got.Amount != "20.50" || got.Merchant != "Metro" || got.Date != "2026-08-01" {
 		t.Fatalf("canonical scalars = %#v, want normalized Metro/20.50/2026-08-01", got)
 	}
-	if got.CategoryID != created.CategoryID || got.Category != "Groceries" {
+	if transactionCategoryID(got) != transactionCategoryID(created) || transactionCategory(got) != "Groceries" {
 		t.Fatalf("canonical category = %#v, want stored Groceries", got)
 	}
 	if got.Note == nil || *got.Note != "weekly" {
@@ -611,7 +611,7 @@ func TestListClosedDatabaseWritesNothing(t *testing.T) {
 	store, categories, _, db := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
 	createCategory(t, ctx, categories, "Groceries")
 	seeded := seedGroceryTransaction(t, ctx, store)
-	insertBudget(t, ctx, db, seeded.CategoryID, "2026-08", "500.00")
+	insertBudget(t, ctx, db, transactionCategoryID(seeded), "2026-08", "500.00")
 	const frozen = "2020-01-01T00:00:00.000Z"
 	freezeTransactionTimestamps(t, ctx, db, seeded.ID, frozen)
 	freezeMappingTimestamps(t, ctx, db, loadStoredMapping(t, ctx, db, "Metro").ID, frozen)
@@ -658,7 +658,7 @@ func TestListDoesNotMutateTransactionsMappingsOrBudgets(t *testing.T) {
 	addTransaction(t, ctx, store, transaction.AddInput{
 		Amount: "12.00", Merchant: "Cafe", Category: stringPtr("Dining"), Date: stringPtr("2026-08-02"),
 	})
-	insertBudget(t, ctx, db, seeded.CategoryID, "2026-08", "500.00")
+	insertBudget(t, ctx, db, transactionCategoryID(seeded), "2026-08", "500.00")
 	const frozen = "2020-01-01T00:00:00.000Z"
 	for _, row := range listStoredTransactions(t, ctx, db) {
 		freezeTransactionTimestamps(t, ctx, db, row.ID, frozen)

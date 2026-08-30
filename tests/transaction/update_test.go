@@ -48,7 +48,7 @@ func TestUpdatePatchesEachFieldIndependently(t *testing.T) {
 		health := createCategory(t, ctx, categories, "Health")
 		seeded := seedGroceryTransaction(t, ctx, store)
 		result := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: seeded.ID, Category: stringPtr("Health")})
-		if result.Transaction.CategoryID != health.ID || result.Transaction.Category != "Health" {
+		if transactionCategoryID(result.Transaction) != health.ID || transactionCategory(result.Transaction) != "Health" {
 			t.Fatalf("category = %#v, want Health", result.Transaction)
 		}
 		assertUnpatchedFields(t, result.Transaction, seeded, "category")
@@ -95,7 +95,7 @@ func TestUpdateAmountOnlyPreservesOtherColumns(t *testing.T) {
 	if result.Transaction.UpdatedAt == frozenTimestamp || result.Transaction.UpdatedAt == "" {
 		t.Fatalf("updated_at = %q, want advanced", result.Transaction.UpdatedAt)
 	}
-	if result.Transaction.Merchant != "Metro" || result.Transaction.Date != "2026-08-01" || result.Transaction.Category != "Groceries" {
+	if result.Transaction.Merchant != "Metro" || result.Transaction.Date != "2026-08-01" || transactionCategory(result.Transaction) != "Groceries" {
 		t.Fatalf("unpatched columns changed: %#v", result.Transaction)
 	}
 	if result.Transaction.Note == nil || *result.Transaction.Note != "weekly" {
@@ -136,7 +136,7 @@ func TestUpdateMerchantOnlyKeepsCategoryIncludingInactive(t *testing.T) {
 	if result.Transaction.Merchant != "Shoppers Drug Mart" {
 		t.Fatalf("merchant = %q, want trimmed Shoppers Drug Mart", result.Transaction.Merchant)
 	}
-	if result.Transaction.CategoryID != health.ID || result.Transaction.Category != "Health" {
+	if transactionCategoryID(result.Transaction) != health.ID || transactionCategory(result.Transaction) != "Health" {
 		t.Fatalf("category = %#v, want inactive Health retained", result.Transaction)
 	}
 	if loadStoredTransaction(t, ctx, db, seeded.ID).CategoryID != health.ID {
@@ -160,7 +160,7 @@ func TestUpdateCategoryOnlyChangesThisRow(t *testing.T) {
 	beforeSecond := loadStoredTransaction(t, ctx, db, second.ID)
 
 	result := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: first.ID, Category: stringPtr(" health ")})
-	if result.Transaction.CategoryID != health.ID || result.Transaction.Category != "Health" {
+	if transactionCategoryID(result.Transaction) != health.ID || transactionCategory(result.Transaction) != "Health" {
 		t.Fatalf("updated row = %#v, want Health", result.Transaction)
 	}
 	if result.Transaction.Amount != "20.00" || result.Transaction.Merchant != "Metro" {
@@ -241,7 +241,7 @@ func TestUpdateSameValueStillAdvancesUpdatedAt(t *testing.T) {
 		Date:     stringPtr("2026-08-01"),
 		Note:     noteValue("weekly"),
 	})
-	if result.Transaction.Amount != "20.00" || result.Transaction.Merchant != "Metro" || result.Transaction.Category != "Groceries" {
+	if result.Transaction.Amount != "20.00" || result.Transaction.Merchant != "Metro" || transactionCategory(result.Transaction) != "Groceries" {
 		t.Fatalf("same-value update changed columns: %#v", result.Transaction)
 	}
 	if result.Transaction.CreatedAt != frozenTimestamp {
@@ -411,12 +411,12 @@ func TestUpdateNonCategoryPatchOnInactiveCategorySucceeds(t *testing.T) {
 	}
 
 	amount := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: seeded.ID, Amount: stringPtr("21.00")})
-	if amount.Transaction.Amount != "21.00" || amount.Transaction.CategoryID != health.ID || amount.Transaction.Category != "Health" {
+	if amount.Transaction.Amount != "21.00" || transactionCategoryID(amount.Transaction) != health.ID || transactionCategory(amount.Transaction) != "Health" {
 		t.Fatalf("amount patch = %#v, want Health retained", amount.Transaction)
 	}
 
 	merchant := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: seeded.ID, Merchant: stringPtr("Shoppers Drug Mart")})
-	if merchant.Transaction.Merchant != "Shoppers Drug Mart" || merchant.Transaction.CategoryID != health.ID {
+	if merchant.Transaction.Merchant != "Shoppers Drug Mart" || transactionCategoryID(merchant.Transaction) != health.ID {
 		t.Fatalf("merchant patch = %#v, want Health retained", merchant.Transaction)
 	}
 	if loadStoredTransaction(t, ctx, db, seeded.ID).CategoryID != health.ID {
@@ -521,7 +521,7 @@ func TestUpdateNewMerchantSpellingDoesNotCreateMapping(t *testing.T) {
 		ID:       seeded.ID,
 		Merchant: stringPtr("Metro grocery store"),
 	})
-	if result.Transaction.Merchant != "Metro grocery store" || result.Transaction.Category != "Groceries" {
+	if result.Transaction.Merchant != "Metro grocery store" || transactionCategory(result.Transaction) != "Groceries" {
 		t.Fatalf("updated transaction = %#v", result.Transaction)
 	}
 	if got := countMappings(t, ctx, db); got != 1 {
@@ -553,10 +553,10 @@ func TestUpdateDoesNotApplyDifferentMerchantMapping(t *testing.T) {
 	if result.Transaction.Merchant != "Shoppers" {
 		t.Fatalf("merchant = %q, want Shoppers", result.Transaction.Merchant)
 	}
-	if result.Transaction.CategoryID != groceries.ID || result.Transaction.Category != "Groceries" {
+	if transactionCategoryID(result.Transaction) != groceries.ID || transactionCategory(result.Transaction) != "Groceries" {
 		t.Fatalf("category = %#v, want existing Groceries not mapped Health", result.Transaction)
 	}
-	if result.Transaction.CategoryID == health.ID {
+	if transactionCategoryID(result.Transaction) == health.ID {
 		t.Fatal("applied Shoppers -> Health mapping")
 	}
 	if loadStoredMapping(t, ctx, db, "Shoppers") != beforeShoppers {
@@ -582,7 +582,7 @@ func TestUpdateMerchantAndCategoryWritesNoMapping(t *testing.T) {
 		Merchant: stringPtr("New Store"),
 		Category: stringPtr("Health"),
 	})
-	if result.Transaction.Merchant != "New Store" || result.Transaction.CategoryID != health.ID {
+	if result.Transaction.Merchant != "New Store" || transactionCategoryID(result.Transaction) != health.ID {
 		t.Fatalf("updated transaction = %#v", result.Transaction)
 	}
 	if !reflect.DeepEqual(listStoredMappings(t, ctx, db), beforeMappings) {
@@ -705,7 +705,7 @@ func TestUpdateReturnsCanonicalJoinedTransaction(t *testing.T) {
 	if result.Transaction.ID != seeded.ID {
 		t.Fatalf("id = %d, want %d", result.Transaction.ID, seeded.ID)
 	}
-	if result.Transaction.Amount != "1.00" || result.Transaction.Category != "Groceries" || result.Transaction.CategoryID != groceries.ID {
+	if result.Transaction.Amount != "1.00" || transactionCategory(result.Transaction) != "Groceries" || transactionCategoryID(result.Transaction) != groceries.ID {
 		t.Fatalf("canonical transaction = %#v", result.Transaction)
 	}
 	if result.Transaction.Note != nil {
@@ -805,8 +805,8 @@ func assertUnpatchedFields(t *testing.T, got, original contract.Transaction, pat
 	if patched != "merchant" && got.Merchant != original.Merchant {
 		t.Fatalf("merchant changed to %q, want %q", got.Merchant, original.Merchant)
 	}
-	if patched != "category" && (got.CategoryID != original.CategoryID || got.Category != original.Category) {
-		t.Fatalf("category changed to %d/%q, want %d/%q", got.CategoryID, got.Category, original.CategoryID, original.Category)
+	if patched != "category" && (transactionCategoryID(got) != transactionCategoryID(original) || transactionCategory(got) != transactionCategory(original)) {
+		t.Fatalf("category changed to %d/%q, want %d/%q", transactionCategoryID(got), transactionCategory(got), transactionCategoryID(original), transactionCategory(original))
 	}
 	if patched != "date" && got.Date != original.Date {
 		t.Fatalf("date changed to %q, want %q", got.Date, original.Date)

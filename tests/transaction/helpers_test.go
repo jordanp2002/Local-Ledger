@@ -69,6 +69,20 @@ func int64Ptr(value int64) *int64 {
 	return &value
 }
 
+func transactionCategoryID(value contract.Transaction) int64 {
+	if value.CategoryID == nil {
+		return 0
+	}
+	return *value.CategoryID
+}
+
+func transactionCategory(value contract.Transaction) string {
+	if value.Category == nil {
+		return ""
+	}
+	return *value.Category
+}
+
 func noteClear() transaction.NotePatch {
 	return transaction.NotePatch{Present: true}
 }
@@ -320,9 +334,10 @@ type storedTransaction struct {
 func listStoredTransactions(t *testing.T, ctx context.Context, db *sql.DB) []storedTransaction {
 	t.Helper()
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, merchant, amount_hundredths, date, category_id, note, created_at, updated_at
-		FROM transactions
-		ORDER BY id ASC
+		SELECT t.id, t.merchant, a.amount_hundredths, t.date, a.category_id, t.note, t.created_at, t.updated_at
+		FROM transactions AS t
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		ORDER BY t.id ASC
 	`)
 	if err != nil {
 		t.Fatalf("query stored transactions: %v", err)

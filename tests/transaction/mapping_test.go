@@ -29,7 +29,7 @@ func TestAddCreatedInsertsTransactionAndMappingWithSubmittedSpelling(t *testing.
 	if result.Transaction.ID <= 0 || result.Transaction.Merchant != "Metro" || result.Transaction.Amount != "20.50" {
 		t.Fatalf("created transaction = %#v, want canonical Metro/20.50", result.Transaction)
 	}
-	if result.Transaction.CategoryID != groceries.ID || result.Transaction.Category != "Groceries" {
+	if transactionCategoryID(result.Transaction) != groceries.ID || transactionCategory(result.Transaction) != "Groceries" {
 		t.Fatalf("created category = %#v, want stored Groceries", result.Transaction)
 	}
 	if result.Transaction.Note == nil || *result.Transaction.Note != "weekly" {
@@ -64,7 +64,7 @@ func TestAddOmittedCategoryWithActiveMappingIsKnownMerchantMatched(t *testing.T)
 	if result.CategorySource != transaction.CategorySourceKnownMerchant || result.MerchantMappingAction != transaction.MappingActionMatched {
 		t.Fatalf("matched flags = (%q, %q)", result.CategorySource, result.MerchantMappingAction)
 	}
-	if result.Transaction.Merchant != "metro" || result.Transaction.CategoryID != groceries.ID || result.Transaction.Category != "Groceries" {
+	if result.Transaction.Merchant != "metro" || transactionCategoryID(result.Transaction) != groceries.ID || transactionCategory(result.Transaction) != "Groceries" {
 		t.Fatalf("matched transaction = %#v, want submitted metro spelling", result.Transaction)
 	}
 
@@ -124,7 +124,7 @@ func TestAddSuppliedDifferentActiveCategoryPreservesMapping(t *testing.T) {
 	if result.CategorySource != transaction.CategorySourceProvided || result.MerchantMappingAction != transaction.MappingActionPreserved {
 		t.Fatalf("preserved flags = (%q, %q)", result.CategorySource, result.MerchantMappingAction)
 	}
-	if result.Transaction.CategoryID != health.ID || result.Transaction.Category != "Health" {
+	if transactionCategoryID(result.Transaction) != health.ID || transactionCategory(result.Transaction) != "Health" {
 		t.Fatalf("preserved transaction = %#v, want Health", result.Transaction)
 	}
 	after := loadStoredMapping(t, ctx, db, "Metro")
@@ -194,7 +194,7 @@ func TestAddSuppliedActiveCategoryReplacesInactiveMapping(t *testing.T) {
 	if result.CategorySource != transaction.CategorySourceProvided || result.MerchantMappingAction != transaction.MappingActionReplacedInactive {
 		t.Fatalf("replaced flags = (%q, %q)", result.CategorySource, result.MerchantMappingAction)
 	}
-	if result.Transaction.CategoryID != groceries.ID || result.Transaction.Merchant != "SHOPPERS" {
+	if transactionCategoryID(result.Transaction) != groceries.ID || result.Transaction.Merchant != "SHOPPERS" {
 		t.Fatalf("replaced transaction = %#v, want Groceries and submitted spelling", result.Transaction)
 	}
 
@@ -547,7 +547,7 @@ func TestAddReturnsCanonicalJoinedTransaction(t *testing.T) {
 	if err != nil || len(fields) != 0 {
 		t.Fatalf("Add() = %#v fields %#v error %v", result, fields, err)
 	}
-	if result.Transaction.Amount != "1.00" || result.Transaction.Category != "Groceries" || result.Transaction.CategoryID != groceries.ID {
+	if result.Transaction.Amount != "1.00" || transactionCategory(result.Transaction) != "Groceries" || transactionCategoryID(result.Transaction) != groceries.ID {
 		t.Fatalf("canonical transaction = %#v", result.Transaction)
 	}
 	if result.Transaction.Note != nil {

@@ -190,7 +190,7 @@ func TestStdioLifecycle(t *testing.T) {
 		t.Fatalf("list_transactions transactions = %#v, want the remaining No Frills purchase", listedPayload["transactions"])
 	}
 	listedTxn := decodeTransaction(t, listedRows[0])
-	if listedTxn.ID != first.ID || listedTxn.Merchant != "No Frills" || listedTxn.Amount != "23.50" || listedTxn.Date != "2026-08-14" || listedTxn.Category != "Groceries" {
+	if listedTxn.ID != first.ID || listedTxn.Merchant != "No Frills" || listedTxn.Amount != "23.50" || listedTxn.Date != "2026-08-14" || transactionCategory(listedTxn) != "Groceries" {
 		t.Fatalf("listed transaction = %#v, want updated No Frills 23.50", listedTxn)
 	}
 	if listedTxn.Note != nil || asObject(t, listedRows[0])["note"] != nil {
@@ -259,8 +259,8 @@ func TestStdioLifecycle(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query migration version: %v", err)
 	}
-	if version != 4 {
-		t.Fatalf("migration version = %d, want 4", version)
+	if version != 5 {
+		t.Fatalf("migration version = %d, want 5", version)
 	}
 
 	var name string
@@ -304,9 +304,10 @@ func TestStdioLifecycle(t *testing.T) {
 	var transactionAmount int64
 	var transactionNote sql.NullString
 	if err := db.QueryRowContext(ctx, `
-		SELECT t.merchant, t.amount_hundredths, t.date, t.note, c.name
+		SELECT t.merchant, a.amount_hundredths, t.date, t.note, c.name
 		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		INNER JOIN categories AS c ON c.id = a.category_id
 		WHERE t.id = ?
 	`, first.ID).Scan(&transactionMerchant, &transactionAmount, &transactionDate, &transactionNote, &transactionCategory); err != nil {
 		t.Fatalf("select persisted No Frills transaction: %v", err)

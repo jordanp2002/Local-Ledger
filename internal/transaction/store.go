@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	ErrCategoryNotFound         = errors.New("category not found")
-	ErrCategoryInactive         = errors.New("category inactive")
-	ErrMerchantCategoryRequired = errors.New("merchant category required")
-	ErrMerchantCategoryInactive = errors.New("merchant category inactive")
-	ErrTransactionNotFound      = errors.New("transaction not found")
+	ErrCategoryNotFound                    = errors.New("category not found")
+	ErrCategoryInactive                    = errors.New("category inactive")
+	ErrMerchantCategoryRequired            = errors.New("merchant category required")
+	ErrMerchantCategoryInactive            = errors.New("merchant category inactive")
+	ErrTransactionNotFound                 = errors.New("transaction not found")
+	ErrSplitTransactionRequiresAllocations = errors.New("split transaction requires allocations")
 )
 
 const (
@@ -40,6 +41,89 @@ type AddInput struct {
 	IdempotencyKey *string
 }
 
+type AllocationInput struct {
+	Category string
+	Amount   string
+}
+
+type AddSplitInput struct {
+	Merchant       string
+	Date           *string
+	Note           *string
+	Allocations    []AllocationInput
+	IdempotencyKey *string
+}
+
+// InTxAllocation is one already-resolved allocation for AddInTx.
+type InTxAllocation struct {
+	CategoryID       int64
+	AmountHundredths int64
+}
+
+// InTxInput inserts a complete transaction inside a caller-owned transaction.
+// CreatedAt and UpdatedAt may be set when the caller owns the operation clock.
+type InTxInput struct {
+	Merchant    string
+	Date        string
+	Note        *string
+	Allocations []InTxAllocation
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+// AddInTx writes one parent and its complete allocation set atomically. It is
+// intended for domain operations that already own a SQLite transaction.
+func AddInTx(ctx context.Context, tx *sql.Tx, in InTxInput) (contract.Transaction, error) {
+	if tx == nil {
+		return contract.Transaction{}, errors.New("transaction SQL transaction is nil")
+	}
+	if len(in.Allocations) == 0 {
+		return contract.Transaction{}, errors.New("transaction must have at least one allocation")
+	}
+	seen := make(map[int64]struct{}, len(in.Allocations))
+	var total int64
+	for _, allocation := range in.Allocations {
+		if allocation.CategoryID < 1 || allocation.AmountHundredths < 1 {
+			return contract.Transaction{}, errors.New("transaction allocations must be positive")
+		}
+		if _, exists := seen[allocation.CategoryID]; exists {
+			return contract.Transaction{}, errors.New("transaction allocations must use distinct categories")
+		}
+		next, ok := checkedAllocationAdd(total, allocation.AmountHundredths)
+		if !ok {
+			return contract.Transaction{}, errors.New("transaction allocation total overflow")
+		}
+		total = next
+		seen[allocation.CategoryID] = struct{}{}
+	}
+	query := `INSERT INTO transactions (merchant, date, note) VALUES (?, ?, ?)`
+	args := []any{in.Merchant, in.Date, in.Note}
+	if in.CreatedAt != "" || in.UpdatedAt != "" {
+		if in.CreatedAt == "" || in.UpdatedAt == "" {
+			return contract.Transaction{}, errors.New("transaction timestamps must be supplied together")
+		}
+		query = `INSERT INTO transactions (merchant, date, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+		args = append(args, in.CreatedAt, in.UpdatedAt)
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return contract.Transaction{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return contract.Transaction{}, err
+	}
+	for _, allocation := range in.Allocations {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+			VALUES (?, ?, ?)
+		`, id, allocation.CategoryID, allocation.AmountHundredths); err != nil {
+			return contract.Transaction{}, err
+		}
+	}
+	return loadTransaction(ctx, tx, id)
+}
+
 // AddResult is the canonical result of recording one transaction.
 type AddResult struct {
 	Transaction           contract.Transaction
@@ -54,16 +138,18 @@ type NotePatch struct {
 }
 
 type UpdateInput struct {
-	ID           int64
-	Amount       *string
-	AmountNull   bool
-	Merchant     *string
-	MerchantNull bool
-	Category     *string
-	CategoryNull bool
-	Date         *string
-	DateNull     bool
-	Note         NotePatch
+	ID              int64
+	Amount          *string
+	AmountNull      bool
+	Merchant        *string
+	MerchantNull    bool
+	Category        *string
+	CategoryNull    bool
+	Date            *string
+	DateNull        bool
+	Note            NotePatch
+	Allocations     *[]AllocationInput
+	AllocationsNull bool
 }
 
 // UpdateResult is the canonical joined transaction after a patch.
@@ -150,6 +236,21 @@ type TransactionNotFoundError struct {
 	ID int64
 }
 
+type SplitTransactionRequiresAllocationsError struct {
+	ID int64
+}
+
+func (e *SplitTransactionRequiresAllocationsError) Error() string {
+	if e == nil {
+		return ErrSplitTransactionRequiresAllocations.Error()
+	}
+	return fmt.Sprintf("transaction %d is split and requires allocations", e.ID)
+}
+
+func (e *SplitTransactionRequiresAllocationsError) Is(target error) bool {
+	return target == ErrSplitTransactionRequiresAllocations
+}
+
 func (e *TransactionNotFoundError) Error() string {
 	if e == nil {
 		return ErrTransactionNotFound.Error()
@@ -170,6 +271,21 @@ type validatedAdd struct {
 	note             sql.NullString
 	idempotencyKey   string
 	fingerprint      string
+}
+
+type validatedAllocation struct {
+	categoryID   int64
+	categoryName string
+	amount       int64
+}
+
+type validatedSplit struct {
+	merchant       string
+	date           string
+	dateOmitted    bool
+	note           sql.NullString
+	allocations    []AllocationInput
+	idempotencyKey string
 }
 
 // LocalDate formats YYYY-MM-DD in t's location without converting to UTC first.
@@ -199,6 +315,91 @@ func (s *Store) Add(ctx context.Context, in AddInput) (AddResult, []contract.Fie
 		return AddResult{}, nil, errors.New("transaction store database is nil")
 	}
 	return s.add(ctx, validated)
+}
+
+func (s *Store) AddSplit(ctx context.Context, in AddSplitInput) (AddResult, []contract.FieldIssue, error) {
+	now := time.Now()
+	if s != nil && s.Now != nil {
+		now = s.Now()
+	}
+	validated, fields := validateAddSplit(in, now)
+	if len(fields) != 0 {
+		return AddResult{}, fields, nil
+	}
+	if s == nil || s.DB == nil {
+		return AddResult{}, nil, errors.New("transaction store database is nil")
+	}
+	return s.addSplit(ctx, validated)
+}
+
+func validateAddSplit(in AddSplitInput, now time.Time) (validatedSplit, []contract.FieldIssue) {
+	fields := make([]contract.FieldIssue, 0)
+	validated := validatedSplit{}
+	if merchant, issue := validateMerchant(in.Merchant); issue != nil {
+		fields = append(fields, *issue)
+	} else {
+		validated.merchant = merchant
+	}
+	today := LocalDate(now)
+	if in.Date != nil {
+		if date, issue := validateDate(*in.Date, today); issue != nil {
+			fields = append(fields, *issue)
+		} else {
+			validated.date = date
+		}
+	} else {
+		validated.date = today
+		validated.dateOmitted = true
+	}
+	if in.Note != nil {
+		if note, issue := validateNote(*in.Note); issue != nil {
+			fields = append(fields, *issue)
+		} else {
+			validated.note = note
+		}
+	}
+	if in.IdempotencyKey != nil {
+		if key, issue := validateIdempotencyKey(*in.IdempotencyKey); issue != nil {
+			fields = append(fields, *issue)
+		} else {
+			validated.idempotencyKey = key
+		}
+	}
+	if len(in.Allocations) < 2 {
+		fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "must contain at least two items"})
+	} else {
+		validated.allocations = make([]AllocationInput, len(in.Allocations))
+		seen := make(map[string]struct{}, len(in.Allocations))
+		var total int64
+		for i, allocation := range in.Allocations {
+			category, issue := validateCategoryName(allocation.Category)
+			if issue != nil {
+				issue.Field = fmt.Sprintf("allocations[%d].category", i)
+				fields = append(fields, *issue)
+			} else {
+				key := strings.ToLower(category)
+				if _, exists := seen[key]; exists {
+					fields = append(fields, contract.FieldIssue{Field: fmt.Sprintf("allocations[%d].category", i), Reason: "must not repeat a category"})
+				}
+				seen[key] = struct{}{}
+				validated.allocations[i].Category = category
+			}
+			amount, amountIssue := validateAmount(allocation.Amount)
+			if amountIssue != nil {
+				amountIssue.Field = fmt.Sprintf("allocations[%d].amount", i)
+				fields = append(fields, *amountIssue)
+			} else {
+				next, ok := checkedAdd(total, amount)
+				if !ok {
+					fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "total must fit the supported amount range"})
+				} else {
+					total = next
+				}
+				validated.allocations[i].Amount = allocation.Amount
+			}
+		}
+	}
+	return validated, fields
 }
 
 func validateAdd(in AddInput, now time.Time) (validatedAdd, []contract.FieldIssue) {
@@ -418,14 +619,20 @@ func addValidatedInTx(ctx context.Context, tx *sql.Tx, in validatedAdd) (AddResu
 	}
 
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO transactions (merchant, amount_hundredths, date, category_id, note)
-		VALUES (?, ?, ?, ?, ?)
-	`, in.merchant, in.amountHundredths, in.date, categoryID, in.note)
+		INSERT INTO transactions (merchant, date, note)
+		VALUES (?, ?, ?)
+	`, in.merchant, in.date, in.note)
 	if err != nil {
 		return AddResult{}, err
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
+		return AddResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+		VALUES (?, ?, ?)
+	`, id, categoryID, in.amountHundredths); err != nil {
 		return AddResult{}, err
 	}
 
@@ -560,12 +767,7 @@ func lookupKnownMerchant(ctx context.Context, tx *sql.Tx, merchantName string) (
 }
 
 func getTransactionByID(ctx context.Context, tx *sql.Tx, id int64) (contract.Transaction, error) {
-	return scanTransaction(tx.QueryRowContext(ctx, `
-		SELECT `+transactionColumns+`
-		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id
-		WHERE t.id = ?
-	`, id))
+	return loadTransaction(ctx, tx, id)
 }
 
 func scanCategory(row interface{ Scan(dest ...any) error }) (contract.Category, error) {

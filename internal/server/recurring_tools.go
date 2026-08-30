@@ -41,6 +41,31 @@ type disableRecurringTransactionOutput struct {
 	Changed              bool                          `json:"changed"`
 }
 
+type updateRecurringTransactionInput struct {
+	ID         int64   `json:"id"`
+	Merchant   *string `json:"merchant,omitempty"`
+	Amount     *string `json:"amount,omitempty"`
+	Category   *string `json:"category,omitempty"`
+	DayOfMonth *int64  `json:"day_of_month,omitempty"`
+	Note       *string `json:"note,omitempty"`
+}
+
+type updateRecurringTransactionOutput struct {
+	OK                   bool                          `json:"ok"`
+	RecurringTransaction contract.RecurringTransaction `json:"recurring_transaction"`
+	Changed              bool                          `json:"changed"`
+}
+
+type enableRecurringTransactionInput struct {
+	ID int64 `json:"id"`
+}
+
+type enableRecurringTransactionOutput struct {
+	OK                   bool                          `json:"ok"`
+	RecurringTransaction contract.RecurringTransaction `json:"recurring_transaction"`
+	Changed              bool                          `json:"changed"`
+}
+
 type previewDueTransactionsInput struct{}
 
 type previewDueTransactionsOutput struct {
@@ -61,6 +86,17 @@ type materializeDueTransactionsOutput struct {
 	Created      int64                  `json:"created"`
 	TotalAmount  string                 `json:"total_amount"`
 	Transactions []contract.Transaction `json:"transactions"`
+}
+
+type previewUpcomingTransactionsInput struct{}
+
+type previewUpcomingTransactionsOutput struct {
+	OK                   bool                             `json:"ok"`
+	AsOfDate             string                           `json:"as_of_date"`
+	Month                string                           `json:"month"`
+	TotalAmount          string                           `json:"total_amount"`
+	UpcomingTransactions []contract.UpcomingTransaction   `json:"upcoming_transactions"`
+	Blocked              []contract.BlockedDueTransaction `json:"blocked"`
 }
 
 type recurringTools struct {
@@ -89,11 +125,29 @@ func registerRecurringTools(srv *mcp.Server, store recurring.Service, logger *lo
 		Annotations: writableToolAnnotations(true, true),
 	}, tools.disableRecurringTransaction)
 
+	mcp.AddTool[updateRecurringTransactionInput, any](srv, &mcp.Tool{
+		Name:        "update_recurring_transaction",
+		Description: "Patch a recurring expense template without changing generated transactions or run history.",
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.updateRecurringTransaction)
+
+	mcp.AddTool[enableRecurringTransactionInput, any](srv, &mcp.Tool{
+		Name:        "enable_recurring_transaction",
+		Description: "Re-enable a disabled recurring expense template without affecting past transactions.",
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.enableRecurringTransaction)
+
 	mcp.AddTool[previewDueTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "preview_due_transactions",
 		Description: "Preview recurring expenses due this month without writing data; show this result to the user and ask for confirmation before materializing.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.previewDueTransactions)
+
+	mcp.AddTool[previewUpcomingTransactionsInput, any](srv, &mcp.Tool{
+		Name:        "preview_upcoming_transactions",
+		Description: "Preview every active recurring expense not yet run in the current month without writing data.",
+		Annotations: readOnlyToolAnnotations(),
+	}, tools.previewUpcomingTransactions)
 
 	mcp.AddTool[materializeDueTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "materialize_due_transactions",
@@ -154,6 +208,40 @@ func (t *recurringTools) disableRecurringTransaction(ctx context.Context, _ *mcp
 	})
 }
 
+func (t *recurringTools) updateRecurringTransaction(ctx context.Context, req *mcp.CallToolRequest, in updateRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
+	updateIn, err := updateRecurringInputFromRequest(req, in)
+	if err != nil {
+		return t.internalError("update_recurring_transaction", err)
+	}
+	res, fields, err := t.store.Update(ctx, updateIn)
+	if len(fields) != 0 {
+		return toolError(invalidRecurringInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapRecurringError("update_recurring_transaction", err)
+	}
+	return toolOK(updateRecurringTransactionOutput{
+		OK:                   true,
+		RecurringTransaction: res.RecurringTransaction,
+		Changed:              res.Changed,
+	})
+}
+
+func (t *recurringTools) enableRecurringTransaction(ctx context.Context, _ *mcp.CallToolRequest, in enableRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
+	res, fields, err := t.store.Enable(ctx, in.ID)
+	if len(fields) != 0 {
+		return toolError(invalidRecurringInputEnvelope(fields))
+	}
+	if err != nil {
+		return t.mapRecurringError("enable_recurring_transaction", err)
+	}
+	return toolOK(enableRecurringTransactionOutput{
+		OK:                   true,
+		RecurringTransaction: res.RecurringTransaction,
+		Changed:              res.Changed,
+	})
+}
+
 func (t *recurringTools) previewDueTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ previewDueTransactionsInput) (*mcp.CallToolResult, any, error) {
 	res, err := t.store.PreviewDue(ctx)
 	if err != nil {
@@ -173,6 +261,27 @@ func (t *recurringTools) previewDueTransactions(ctx context.Context, _ *mcp.Call
 		TotalAmount:     res.TotalAmount,
 		DueTransactions: res.DueTransactions,
 		Blocked:         res.Blocked,
+	})
+}
+
+func (t *recurringTools) previewUpcomingTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ previewUpcomingTransactionsInput) (*mcp.CallToolResult, any, error) {
+	res, err := t.store.PreviewUpcoming(ctx)
+	if err != nil {
+		return t.internalError("preview_upcoming_transactions", err)
+	}
+	if res.UpcomingTransactions == nil {
+		res.UpcomingTransactions = []contract.UpcomingTransaction{}
+	}
+	if res.Blocked == nil {
+		res.Blocked = []contract.BlockedDueTransaction{}
+	}
+	return toolOK(previewUpcomingTransactionsOutput{
+		OK:                   true,
+		AsOfDate:             res.AsOfDate,
+		Month:                res.Month,
+		TotalAmount:          res.TotalAmount,
+		UpcomingTransactions: res.UpcomingTransactions,
+		Blocked:              res.Blocked,
 	})
 }
 
@@ -262,4 +371,47 @@ func invalidRecurringInputEnvelope(fields []contract.FieldIssue) contract.ErrorE
 		false,
 		map[string]any{"fields": fields},
 	))
+}
+
+func updateRecurringInputFromRequest(req *mcp.CallToolRequest, in updateRecurringTransactionInput) (recurring.UpdateInput, error) {
+	args, err := rawToolArguments(req)
+	if err != nil {
+		return recurring.UpdateInput{}, err
+	}
+	out := recurring.UpdateInput{ID: in.ID}
+	if raw, ok := args["merchant"]; ok {
+		if isJSONNull(raw) {
+			out.MerchantNull = true
+		} else {
+			out.Merchant = in.Merchant
+		}
+	}
+	if raw, ok := args["amount"]; ok {
+		if isJSONNull(raw) {
+			out.AmountNull = true
+		} else {
+			out.Amount = in.Amount
+		}
+	}
+	if raw, ok := args["category"]; ok {
+		if isJSONNull(raw) {
+			out.CategoryNull = true
+		} else {
+			out.Category = in.Category
+		}
+	}
+	if raw, ok := args["day_of_month"]; ok {
+		if isJSONNull(raw) {
+			out.DayOfMonthNull = true
+		} else {
+			out.DayOfMonth = in.DayOfMonth
+		}
+	}
+	if raw, ok := args["note"]; ok {
+		out.Note.Present = true
+		if !isJSONNull(raw) {
+			out.Note.Value = in.Note
+		}
+	}
+	return out, nil
 }

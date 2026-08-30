@@ -18,16 +18,23 @@ type Budget struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
+type TransactionAllocation struct {
+	CategoryID int64  `json:"category_id"`
+	Category   string `json:"category"`
+	Amount     string `json:"amount"`
+}
+
 type Transaction struct {
-	ID         int64   `json:"id"`
-	Amount     string  `json:"amount"`
-	Merchant   string  `json:"merchant"`
-	Date       string  `json:"date"`
-	CategoryID int64   `json:"category_id"`
-	Category   string  `json:"category"`
-	Note       *string `json:"note"`
-	CreatedAt  string  `json:"created_at"`
-	UpdatedAt  string  `json:"updated_at"`
+	ID          int64                   `json:"id"`
+	Amount      string                  `json:"amount"`
+	Merchant    string                  `json:"merchant"`
+	Date        string                  `json:"date"`
+	CategoryID  *int64                  `json:"category_id"`
+	Category    *string                 `json:"category"`
+	Note        *string                 `json:"note"`
+	Allocations []TransactionAllocation `json:"allocations"`
+	CreatedAt   string                  `json:"created_at"`
+	UpdatedAt   string                  `json:"updated_at"`
 }
 
 type KnownMerchant struct {
@@ -126,6 +133,17 @@ type DueTransaction struct {
 	CategoryID             int64   `json:"category_id"`
 	Category               string  `json:"category"`
 	DueDate                string  `json:"due_date"`
+	Note                   *string `json:"note"`
+}
+
+type UpcomingTransaction struct {
+	RecurringTransactionID int64   `json:"recurring_transaction_id"`
+	Merchant               string  `json:"merchant"`
+	Amount                 string  `json:"amount"`
+	CategoryID             int64   `json:"category_id"`
+	Category               string  `json:"category"`
+	ScheduledDate          string  `json:"scheduled_date"`
+	Status                 string  `json:"status"`
 	Note                   *string `json:"note"`
 }
 

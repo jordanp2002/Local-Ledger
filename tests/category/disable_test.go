@@ -264,8 +264,10 @@ func TestDisablePreservesEarlierBudgetsTransactionsAndMerchants(t *testing.T) {
 	var txMerchant, txDate, txCreated, txUpdated string
 	var txAmount, txCategoryID int64
 	if err := store.DB.QueryRowContext(ctx, `
-		SELECT merchant, amount_hundredths, date, category_id, created_at, updated_at
-		FROM transactions WHERE id = ?
+		SELECT t.merchant, a.amount_hundredths, t.date, a.category_id, t.created_at, t.updated_at
+		FROM transactions AS t
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		WHERE t.id = ?
 	`, txID).Scan(&txMerchant, &txAmount, &txDate, &txCategoryID, &txCreated, &txUpdated); err != nil {
 		t.Fatalf("load transaction: %v", err)
 	}
@@ -298,8 +300,10 @@ func TestDisablePreservesEarlierBudgetsTransactionsAndMerchants(t *testing.T) {
 	var gotMerchant, gotDate, gotTxCreated, gotTxUpdated string
 	var gotAmount, gotCategoryID int64
 	if err := store.DB.QueryRowContext(ctx, `
-		SELECT merchant, amount_hundredths, date, category_id, created_at, updated_at
-		FROM transactions WHERE id = ?
+		SELECT t.merchant, a.amount_hundredths, t.date, a.category_id, t.created_at, t.updated_at
+		FROM transactions AS t
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		WHERE t.id = ?
 	`, txID).Scan(&gotMerchant, &gotAmount, &gotDate, &gotCategoryID, &gotTxCreated, &gotTxUpdated); err != nil {
 		t.Fatalf("reload transaction: %v", err)
 	}

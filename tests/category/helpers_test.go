@@ -76,15 +76,21 @@ func insertTransaction(t *testing.T, ctx context.Context, db *sql.DB, merchant, 
 		t.Fatalf("ParseAmount(%q): %v", amount, err)
 	}
 	result, err := db.ExecContext(ctx, `
-		INSERT INTO transactions (merchant, amount_hundredths, date, category_id)
-		VALUES (?, ?, ?, ?)
-	`, merchant, hundredths, date, categoryID)
+		INSERT INTO transactions (merchant, date)
+		VALUES (?, ?)
+	`, merchant, date)
 	if err != nil {
 		t.Fatalf("insert transaction: %v", err)
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
 		t.Fatalf("transaction LastInsertId: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+		VALUES (?, ?, ?)
+	`, id, categoryID, hundredths); err != nil {
+		t.Fatalf("insert transaction allocation: %v", err)
 	}
 	return id
 }

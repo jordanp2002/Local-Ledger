@@ -223,12 +223,7 @@ func replayImportRecord(ctx context.Context, q rowQueryer, key, fingerprint stri
 	results := make([]AddResult, 0, len(items))
 	var total int64
 	for _, item := range items {
-		recorded, err := scanTransaction(q.QueryRowContext(ctx, `
-			SELECT `+transactionColumns+`
-			FROM transactions AS t
-			INNER JOIN categories AS c ON c.id = t.category_id
-			WHERE t.id = ?
-		`, item.transactionID.Int64))
+		recorded, err := loadTransaction(ctx, q, item.transactionID.Int64)
 		if err != nil {
 			return AddBatchResult{}, err
 		}

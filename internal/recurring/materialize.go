@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
 )
 
 func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error) {
@@ -58,17 +59,17 @@ func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error
 			return MaterializeDueResult{}, err
 		}
 
-		res, err := tx.ExecContext(ctx, `
-			INSERT INTO transactions (
-				merchant, amount_hundredths, category_id, date, note, created_at, updated_at
-			)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, item.Merchant, amountHundredths, item.CategoryID, item.DueDate, item.Note, timestamp, timestamp)
-		if err != nil {
-			return MaterializeDueResult{}, err
-		}
-
-		txnID, err := res.LastInsertId()
+		recorded, err := transaction.AddInTx(ctx, tx, transaction.InTxInput{
+			Merchant: item.Merchant,
+			Date:     item.DueDate,
+			Note:     item.Note,
+			Allocations: []transaction.InTxAllocation{{
+				CategoryID:       item.CategoryID,
+				AmountHundredths: amountHundredths,
+			}},
+			CreatedAt: timestamp,
+			UpdatedAt: timestamp,
+		})
 		if err != nil {
 			return MaterializeDueResult{}, err
 		}
@@ -78,21 +79,11 @@ func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error
 				recurring_transaction_id, month, transaction_id, created_at
 			)
 			VALUES (?, ?, ?, ?)
-		`, item.RecurringTransactionID, preview.Month, txnID, timestamp); err != nil {
+		`, item.RecurringTransactionID, preview.Month, recorded.ID, timestamp); err != nil {
 			return MaterializeDueResult{}, err
 		}
 
-		createdList = append(createdList, contract.Transaction{
-			ID:         txnID,
-			Amount:     item.Amount,
-			Merchant:   item.Merchant,
-			Date:       item.DueDate,
-			CategoryID: item.CategoryID,
-			Category:   item.Category,
-			Note:       item.Note,
-			CreatedAt:  timestamp,
-			UpdatedAt:  timestamp,
-		})
+		createdList = append(createdList, recorded)
 	}
 
 	if err := tx.Commit(); err != nil {
