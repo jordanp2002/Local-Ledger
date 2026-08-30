@@ -62,8 +62,6 @@ func TestCreateRecurringTransactionSuccess(t *testing.T) {
 	if tmpl.CreatedAt != wantTimestamp || tmpl.UpdatedAt != wantTimestamp {
 		t.Errorf("timestamps = (%q, %q), want (%q, %q)", tmpl.CreatedAt, tmpl.UpdatedAt, wantTimestamp, wantTimestamp)
 	}
-
-	// Verify no activity was written to transactions, budgets, or known_merchants
 	if count := countRows(t, ctx, db, "SELECT count(*) FROM transactions"); count != 0 {
 		t.Fatalf("transactions count = %d, want 0", count)
 	}

@@ -29,43 +29,38 @@ func TestListRecurringTransactionsDeterministicOrdering(t *testing.T) {
 
 	cat := mustCreateCategory(t, ctx, catStore, "General")
 
-	// Create templates in arbitrary order
-	// Template 1: active, day 15, merchant "Spotify"
 	res1, _, _ := store.Create(ctx, recurring.CreateInput{
 		Merchant:   "Spotify",
 		Amount:     "10.99",
 		Category:   cat.Name,
 		DayOfMonth: 15,
 	})
-	// Template 2: active, day 1, merchant "Rent"
+
 	res2, _, _ := store.Create(ctx, recurring.CreateInput{
 		Merchant:   "Rent",
 		Amount:     "1500.00",
 		Category:   cat.Name,
 		DayOfMonth: 1,
 	})
-	// Template 3: active, day 15, merchant "apple music" (case-insensitive before Spotify)
 	res3, _, _ := store.Create(ctx, recurring.CreateInput{
 		Merchant:   "apple music",
 		Amount:     "10.99",
 		Category:   cat.Name,
 		DayOfMonth: 15,
 	})
-	// Template 4: active, day 15, merchant "Spotify" (same day, same merchant, higher ID)
 	res4, _, _ := store.Create(ctx, recurring.CreateInput{
 		Merchant:   "Spotify",
 		Amount:     "15.99",
 		Category:   cat.Name,
 		DayOfMonth: 15,
 	})
-	// Template 5: active, day 31, merchant "Gym"
 	res5, _, _ := store.Create(ctx, recurring.CreateInput{
 		Merchant:   "Gym",
 		Amount:     "50.00",
 		Category:   cat.Name,
 		DayOfMonth: 31,
 	})
-	// Template 6: will be disabled, day 1, merchant "AAA" (would be first if active)
+
 	res6, _, _ := store.Create(ctx, recurring.CreateInput{
 		Merchant:   "AAA",
 		Amount:     "100.00",
@@ -82,13 +77,6 @@ func TestListRecurringTransactionsDeterministicOrdering(t *testing.T) {
 		t.Fatalf("List() error = %v", err)
 	}
 
-	// Expected order:
-	// 1. Rent (active, day 1)
-	// 2. apple music (active, day 15, merchant "apple music")
-	// 3. Spotify (active, day 15, merchant "Spotify", ID res1)
-	// 4. Spotify (active, day 15, merchant "Spotify", ID res4)
-	// 5. Gym (active, day 31)
-	// 6. AAA (inactive, day 1)
 	wantIDs := []int64{
 		res2.RecurringTransaction.ID,
 		res3.RecurringTransaction.ID,
@@ -124,7 +112,6 @@ func TestListRecurringTransactionsReflectsCategoryRename(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	// Rename category from "Streaming" to "Entertainment"
 	cat, _, changed, err := catStore.Rename(ctx, "Streaming", "Entertainment")
 	if err != nil || !changed {
 		t.Fatalf("Rename() error = %v, changed = %v", err, changed)
@@ -169,7 +156,6 @@ func TestListRecurringTransactionsWithDisabledCategory(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	// Disable category "Fitness"
 	mustDisableCategory(t, ctx, catStore, "Fitness")
 
 	items, err := store.List(ctx)

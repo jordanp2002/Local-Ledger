@@ -121,3 +121,62 @@ func TestRecurringTransactionJSONShape(t *testing.T) {
 		t.Fatalf("recurring transaction JSON = %s, want %s", got, want)
 	}
 }
+
+func TestDueTransactionJSONShape(t *testing.T) {
+	got, err := json.Marshal(contract.DueTransaction{
+		RecurringTransactionID: 1,
+		Merchant:               "Rent",
+		Amount:                 "1500.00",
+		CategoryID:             1,
+		Category:               "Housing",
+		DueDate:                "2026-08-01",
+		Note:                   nil,
+	})
+	if err != nil {
+		t.Fatalf("marshal due transaction: %v", err)
+	}
+
+	want := `{"recurring_transaction_id":1,"merchant":"Rent","amount":"1500.00","category_id":1,"category":"Housing","due_date":"2026-08-01","note":null}`
+	if string(got) != want {
+		t.Fatalf("due transaction JSON = %s, want %s", got, want)
+	}
+}
+
+func TestDueTransactionJSONShapeWithNote(t *testing.T) {
+	note := "Monthly subscription"
+	got, err := json.Marshal(contract.DueTransaction{
+		RecurringTransactionID: 2,
+		Merchant:               "Netflix",
+		Amount:                 "22.99",
+		CategoryID:             3,
+		Category:               "Entertainment",
+		DueDate:                "2026-08-15",
+		Note:                   &note,
+	})
+	if err != nil {
+		t.Fatalf("marshal due transaction with note: %v", err)
+	}
+
+	want := `{"recurring_transaction_id":2,"merchant":"Netflix","amount":"22.99","category_id":3,"category":"Entertainment","due_date":"2026-08-15","note":"Monthly subscription"}`
+	if string(got) != want {
+		t.Fatalf("due transaction JSON = %s, want %s", got, want)
+	}
+}
+
+func TestBlockedDueTransactionJSONShape(t *testing.T) {
+	got, err := json.Marshal(contract.BlockedDueTransaction{
+		RecurringTransactionID: 4,
+		Merchant:               "Gym",
+		Category:               "Fitness",
+		DueDate:                "2026-08-30",
+		Reason:                 "category_inactive",
+	})
+	if err != nil {
+		t.Fatalf("marshal blocked due transaction: %v", err)
+	}
+
+	want := `{"recurring_transaction_id":4,"merchant":"Gym","category":"Fitness","due_date":"2026-08-30","reason":"category_inactive"}`
+	if string(got) != want {
+		t.Fatalf("blocked due transaction JSON = %s, want %s", got, want)
+	}
+}

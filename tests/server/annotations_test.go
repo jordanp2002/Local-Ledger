@@ -32,6 +32,7 @@ func TestToolAnnotationsDiscovery(t *testing.T) {
 		{name: "disable_category", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "disable_recurring_transaction", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "list_recurring_transactions", readOnly: true, openWorld: false},
+		{name: "preview_due_transactions", readOnly: true, openWorld: false},
 		{name: "rename_category", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "set_known_merchant", destructive: annotationBool(true), idempotent: true, openWorld: false},
 		{name: "rename_known_merchant", destructive: annotationBool(true), idempotent: true, openWorld: false},

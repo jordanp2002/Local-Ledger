@@ -28,7 +28,6 @@ func TestDisableRecurringTransactionSuccessAndRepeated(t *testing.T) {
 
 	tmplID := created.RecurringTransaction.ID
 
-	// First disable
 	res1, issues1, err1 := store.Disable(ctx, tmplID)
 	if err1 != nil {
 		t.Fatalf("first Disable() error = %v", err1)
@@ -46,7 +45,6 @@ func TestDisableRecurringTransactionSuccessAndRepeated(t *testing.T) {
 		t.Errorf("first Disable() updated_at = %q, want injected clock timestamp", res1.RecurringTransaction.UpdatedAt)
 	}
 
-	// Repeated disable
 	res2, issues2, err2 := store.Disable(ctx, tmplID)
 	if err2 != nil {
 		t.Fatalf("second Disable() error = %v", err2)
@@ -64,7 +62,6 @@ func TestDisableRecurringTransactionSuccessAndRepeated(t *testing.T) {
 		t.Errorf("repeated disable modified updated_at: %q vs %q", res2.RecurringTransaction.UpdatedAt, res1.RecurringTransaction.UpdatedAt)
 	}
 
-	// Verify no activity was written to transactions, budgets, or known_merchants
 	if count := countRows(t, ctx, db, "SELECT count(*) FROM transactions"); count != 0 {
 		t.Fatalf("transactions count = %d, want 0", count)
 	}

@@ -118,3 +118,21 @@ type RecurringTransaction struct {
 	CreatedAt      string  `json:"created_at"`
 	UpdatedAt      string  `json:"updated_at"`
 }
+
+type DueTransaction struct {
+	RecurringTransactionID int64   `json:"recurring_transaction_id"`
+	Merchant               string  `json:"merchant"`
+	Amount                 string  `json:"amount"`
+	CategoryID             int64   `json:"category_id"`
+	Category               string  `json:"category"`
+	DueDate                string  `json:"due_date"`
+	Note                   *string `json:"note"`
+}
+
+type BlockedDueTransaction struct {
+	RecurringTransactionID int64  `json:"recurring_transaction_id"`
+	Merchant               string `json:"merchant"`
+	Category               string `json:"category"`
+	DueDate                string `json:"due_date"`
+	Reason                 string `json:"reason"`
+}

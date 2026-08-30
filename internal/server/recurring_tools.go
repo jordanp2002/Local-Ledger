@@ -41,6 +41,17 @@ type disableRecurringTransactionOutput struct {
 	Changed              bool                          `json:"changed"`
 }
 
+type previewDueTransactionsInput struct{}
+
+type previewDueTransactionsOutput struct {
+	OK              bool                             `json:"ok"`
+	AsOfDate        string                           `json:"as_of_date"`
+	Month           string                           `json:"month"`
+	TotalAmount     string                           `json:"total_amount"`
+	DueTransactions []contract.DueTransaction        `json:"due_transactions"`
+	Blocked         []contract.BlockedDueTransaction `json:"blocked"`
+}
+
 type recurringTools struct {
 	store  recurring.Service
 	logger *log.Logger
@@ -66,6 +77,12 @@ func registerRecurringTools(srv *mcp.Server, store recurring.Service, logger *lo
 		Description: "Disable a recurring expense template without affecting past transactions.",
 		Annotations: writableToolAnnotations(true, true),
 	}, tools.disableRecurringTransaction)
+
+	mcp.AddTool[previewDueTransactionsInput, any](srv, &mcp.Tool{
+		Name:        "preview_due_transactions",
+		Description: "Preview recurring expenses that are due today without recording transactions.",
+		Annotations: readOnlyToolAnnotations(),
+	}, tools.previewDueTransactions)
 }
 
 func (t *recurringTools) createRecurringTransaction(ctx context.Context, _ *mcp.CallToolRequest, in createRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
@@ -117,6 +134,28 @@ func (t *recurringTools) disableRecurringTransaction(ctx context.Context, _ *mcp
 		OK:                   true,
 		RecurringTransaction: res.RecurringTransaction,
 		Changed:              res.Changed,
+	})
+}
+
+func (t *recurringTools) previewDueTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ previewDueTransactionsInput) (*mcp.CallToolResult, any, error) {
+	res, err := t.store.PreviewDue(ctx)
+	if err != nil {
+		return t.internalError("preview_due_transactions", err)
+	}
+	if res.DueTransactions == nil {
+		res.DueTransactions = []contract.DueTransaction{}
+	}
+	if res.Blocked == nil {
+		res.Blocked = []contract.BlockedDueTransaction{}
+	}
+
+	return toolOK(previewDueTransactionsOutput{
+		OK:              true,
+		AsOfDate:        res.AsOfDate,
+		Month:           res.Month,
+		TotalAmount:     res.TotalAmount,
+		DueTransactions: res.DueTransactions,
+		Blocked:         res.Blocked,
 	})
 }
 
