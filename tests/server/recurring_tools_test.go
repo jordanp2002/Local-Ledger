@@ -1,0 +1,296 @@
+package server_test
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func TestCreateRecurringTransactionToolSuccess(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+
+	// Create active category first
+	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
+
+	result := callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+		"note":         "Monthly subscription",
+	})
+	if result.IsError {
+		t.Fatalf("create_recurring_transaction IsError = true, want success: %s", structuredJSON(t, result))
+	}
+
+	got := structuredObject(t, result)
+	if got["ok"] != true {
+		t.Fatalf("ok = %v, want true", got["ok"])
+	}
+
+	tmplObj := objectField(t, got, "recurring_transaction")
+	if tmplObj["merchant"] != "Netflix" {
+		t.Errorf("merchant = %v, want Netflix", tmplObj["merchant"])
+	}
+	if tmplObj["amount"] != "22.99" {
+		t.Errorf("amount = %v, want 22.99", tmplObj["amount"])
+	}
+	if tmplObj["category"] != "Entertainment" {
+		t.Errorf("category = %v, want Entertainment", tmplObj["category"])
+	}
+	if tmplObj["category_active"] != true {
+		t.Errorf("category_active = %v, want true", tmplObj["category_active"])
+	}
+	if tmplObj["day_of_month"] != float64(15) && tmplObj["day_of_month"] != int64(15) {
+		t.Errorf("day_of_month = %v, want 15", tmplObj["day_of_month"])
+	}
+	if tmplObj["note"] != "Monthly subscription" {
+		t.Errorf("note = %v, want Monthly subscription", tmplObj["note"])
+	}
+	if tmplObj["active"] != true {
+		t.Errorf("active = %v, want true", tmplObj["active"])
+	}
+}
+
+func TestCreateRecurringTransactionToolInvalidInput(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+
+	result := callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "",
+		"amount":       "-5.00",
+		"category":     "",
+		"day_of_month": 35,
+	})
+	if !result.IsError {
+		t.Fatal("create_recurring_transaction IsError = false, want true")
+	}
+
+	envelope := decodeRecurringErrorEnvelope(t, result)
+	if envelope.Error.Code != contract.ErrorCodeInvalidInput {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, contract.ErrorCodeInvalidInput)
+	}
+
+	fields, ok := envelope.Error.Details["fields"].([]any)
+	if !ok || len(fields) != 4 {
+		t.Fatalf("details.fields = %v, want 4 field issues", envelope.Error.Details["fields"])
+	}
+}
+
+func TestCreateRecurringTransactionToolCategoryNotFound(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+	callTool(t, session, "create_category", map[string]any{"name": "Groceries"})
+
+	result := callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+	})
+	if !result.IsError {
+		t.Fatal("create_recurring_transaction IsError = false, want error")
+	}
+
+	envelope := decodeRecurringErrorEnvelope(t, result)
+	if envelope.Error.Code != contract.ErrorCodeCategoryNotFound {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, contract.ErrorCodeCategoryNotFound)
+	}
+	if envelope.Error.Details["requested_category"] != "Entertainment" {
+		t.Errorf("requested_category = %v, want Entertainment", envelope.Error.Details["requested_category"])
+	}
+	cats, ok := envelope.Error.Details["categories"].([]any)
+	if !ok || len(cats) != 1 {
+		t.Fatalf("categories = %v, want 1 active category", envelope.Error.Details["categories"])
+	}
+}
+
+func TestCreateRecurringTransactionToolCategoryInactive(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
+	callTool(t, session, "create_category", map[string]any{"name": "Groceries"})
+	callTool(t, session, "disable_category", map[string]any{"name": "Entertainment"})
+
+	result := callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+	})
+	if !result.IsError {
+		t.Fatal("create_recurring_transaction IsError = false, want error")
+	}
+
+	envelope := decodeRecurringErrorEnvelope(t, result)
+	if envelope.Error.Code != contract.ErrorCodeCategoryInactive {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, contract.ErrorCodeCategoryInactive)
+	}
+	cat, ok := envelope.Error.Details["category"].(map[string]any)
+	if !ok || cat["name"] != "Entertainment" {
+		t.Errorf("category = %v, want Entertainment", envelope.Error.Details["category"])
+	}
+	activeCats, ok := envelope.Error.Details["active_categories"].([]any)
+	if !ok || len(activeCats) != 1 {
+		t.Fatalf("active_categories = %v, want 1 active category", envelope.Error.Details["active_categories"])
+	}
+}
+
+func TestListRecurringTransactionsTool(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+
+	// List on empty database
+	resultEmpty := callTool(t, session, "list_recurring_transactions", map[string]any{})
+	if resultEmpty.IsError {
+		t.Fatalf("list_recurring_transactions error: %s", structuredJSON(t, resultEmpty))
+	}
+	gotEmpty := structuredObject(t, resultEmpty)
+	if gotEmpty["ok"] != true {
+		t.Fatalf("ok = %v, want true", gotEmpty["ok"])
+	}
+	itemsEmpty, ok := gotEmpty["recurring_transactions"].([]any)
+	if !ok || len(itemsEmpty) != 0 {
+		t.Fatalf("recurring_transactions = %v, want empty array", gotEmpty["recurring_transactions"])
+	}
+
+	// Create categories and templates
+	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
+	callTool(t, session, "create_category", map[string]any{"name": "Housing"})
+
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Spotify",
+		"amount":       "10.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+	})
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Rent",
+		"amount":       "1500.00",
+		"category":     "Housing",
+		"day_of_month": 1,
+	})
+
+	resultPopulated := callTool(t, session, "list_recurring_transactions", map[string]any{})
+	if resultPopulated.IsError {
+		t.Fatalf("list_recurring_transactions error: %s", structuredJSON(t, resultPopulated))
+	}
+	gotPopulated := structuredObject(t, resultPopulated)
+	itemsPopulated, ok := gotPopulated["recurring_transactions"].([]any)
+	if !ok || len(itemsPopulated) != 2 {
+		t.Fatalf("recurring_transactions = %v, want 2 templates", gotPopulated["recurring_transactions"])
+	}
+
+	// First should be Rent (day 1), second Spotify (day 15)
+	first := itemsPopulated[0].(map[string]any)
+	if first["merchant"] != "Rent" {
+		t.Errorf("first merchant = %v, want Rent", first["merchant"])
+	}
+	second := itemsPopulated[1].(map[string]any)
+	if second["merchant"] != "Spotify" {
+		t.Errorf("second merchant = %v, want Spotify", second["merchant"])
+	}
+}
+
+func TestDisableRecurringTransactionTool(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)
+	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
+
+	createRes := callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+	})
+	createObj := structuredObject(t, createRes)
+	tmplObj := objectField(t, createObj, "recurring_transaction")
+	var id int64
+	switch v := tmplObj["id"].(type) {
+	case float64:
+		id = int64(v)
+	case int64:
+		id = v
+	case json.Number:
+		n, _ := v.Int64()
+		id = n
+	}
+
+	// First disable -> changed: true
+	disableRes1 := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": id})
+	if disableRes1.IsError {
+		t.Fatalf("disable_recurring_transaction error: %s", structuredJSON(t, disableRes1))
+	}
+	disableObj1 := structuredObject(t, disableRes1)
+	if disableObj1["ok"] != true || disableObj1["changed"] != true {
+		t.Fatalf("disable response = %v, want ok=true, changed=true", disableObj1)
+	}
+	afterDisable := objectField(t, disableObj1, "recurring_transaction")
+	if afterDisable["active"] != false {
+		t.Errorf("active = %v, want false", afterDisable["active"])
+	}
+
+	// Repeated disable -> changed: false
+	disableRes2 := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": id})
+	if disableRes2.IsError {
+		t.Fatalf("repeated disable_recurring_transaction error: %s", structuredJSON(t, disableRes2))
+	}
+	disableObj2 := structuredObject(t, disableRes2)
+	if disableObj2["ok"] != true || disableObj2["changed"] != false {
+		t.Fatalf("repeated disable response = %v, want ok=true, changed=false", disableObj2)
+	}
+
+	// Disable missing ID -> recurring_transaction_not_found
+	missingRes := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": 999999})
+	if !missingRes.IsError {
+		t.Fatal("disable missing ID IsError = false, want true")
+	}
+	missingEnvelope := decodeRecurringErrorEnvelope(t, missingRes)
+	if missingEnvelope.Error.Code != contract.ErrorCodeRecurringTransactionNotFound {
+		t.Fatalf("error code = %q, want %q", missingEnvelope.Error.Code, contract.ErrorCodeRecurringTransactionNotFound)
+	}
+
+	// Disable invalid ID (0 or negative) -> invalid_input
+	invalidRes := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": 0})
+	if !invalidRes.IsError {
+		t.Fatal("disable invalid ID IsError = false, want true")
+	}
+	invalidEnvelope := decodeRecurringErrorEnvelope(t, invalidRes)
+	if invalidEnvelope.Error.Code != contract.ErrorCodeInvalidInput {
+		t.Fatalf("error code = %q, want %q", invalidEnvelope.Error.Code, contract.ErrorCodeInvalidInput)
+	}
+}
+
+func TestRecurringToolsInternalErrorRedaction(t *testing.T) {
+	db := openCategoryDB(t)
+	session := connectCategorySession(t, db, time.Now, nil)
+
+	// Close underlying database connection to force internal error
+	db.Close()
+
+	result := callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+	})
+	if !result.IsError {
+		t.Fatal("IsError = false, want true for closed database")
+	}
+
+	envelope := decodeRecurringErrorEnvelope(t, result)
+	if envelope.Error.Code != contract.ErrorCodeInternalError {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, contract.ErrorCodeInternalError)
+	}
+	raw := structuredJSON(t, result)
+	if leakedInternalError(raw) {
+		t.Fatalf("internal error leaked driver details: %s", raw)
+	}
+}
+
+func decodeRecurringErrorEnvelope(t *testing.T, result *mcp.CallToolResult) contract.ErrorEnvelope {
+	t.Helper()
+	var envelope contract.ErrorEnvelope
+	if err := json.Unmarshal([]byte(mustJSON(t, result.StructuredContent)), &envelope); err != nil {
+		t.Fatalf("decode error envelope: %v", err)
+	}
+	return envelope
+}
