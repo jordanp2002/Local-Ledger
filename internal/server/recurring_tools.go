@@ -91,13 +91,13 @@ func registerRecurringTools(srv *mcp.Server, store recurring.Service, logger *lo
 
 	mcp.AddTool[previewDueTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "preview_due_transactions",
-		Description: "Preview recurring expenses that are due today without recording transactions.",
+		Description: "Preview recurring expenses due this month without writing data; show this result to the user and ask for confirmation before materializing.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.previewDueTransactions)
 
 	mcp.AddTool[materializeDueTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "materialize_due_transactions",
-		Description: "Create ordinary expense transactions for all recurring expenses currently due.",
+		Description: "After user confirmation, atomically create ordinary expense transactions for the current due set; retries are safe and create no duplicates.",
 		Annotations: writableToolAnnotations(true, true),
 	}, tools.materializeDueTransactions)
 }

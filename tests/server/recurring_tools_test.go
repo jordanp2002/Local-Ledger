@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -307,6 +308,9 @@ func TestPreviewDueTransactionsToolDiscoveryAndSchema(t *testing.T) {
 	if tool.Annotations.DestructiveHint != nil {
 		t.Fatalf("destructiveHint = %v, want omitted for read-only tool", *tool.Annotations.DestructiveHint)
 	}
+	if !strings.Contains(tool.Description, "without writing") || !strings.Contains(tool.Description, "confirmation") {
+		t.Fatalf("description = %q, want no-write and confirmation guidance", tool.Description)
+	}
 }
 
 func TestPreviewDueTransactionsToolEmpty(t *testing.T) {
@@ -465,6 +469,9 @@ func TestMaterializeDueTransactionsToolDiscoveryAndSchema(t *testing.T) {
 	}
 	if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
 		t.Fatalf("openWorldHint = %v, want false", tool.Annotations.OpenWorldHint)
+	}
+	if !strings.Contains(tool.Description, "After user confirmation") || !strings.Contains(tool.Description, "retries are safe") {
+		t.Fatalf("description = %q, want confirmation and retry guidance", tool.Description)
 	}
 }
 
