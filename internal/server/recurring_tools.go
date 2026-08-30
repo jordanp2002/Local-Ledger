@@ -52,6 +52,17 @@ type previewDueTransactionsOutput struct {
 	Blocked         []contract.BlockedDueTransaction `json:"blocked"`
 }
 
+type materializeDueTransactionsInput struct{}
+
+type materializeDueTransactionsOutput struct {
+	OK           bool                   `json:"ok"`
+	AsOfDate     string                 `json:"as_of_date"`
+	Month        string                 `json:"month"`
+	Created      int64                  `json:"created"`
+	TotalAmount  string                 `json:"total_amount"`
+	Transactions []contract.Transaction `json:"transactions"`
+}
+
 type recurringTools struct {
 	store  recurring.Service
 	logger *log.Logger
@@ -83,6 +94,12 @@ func registerRecurringTools(srv *mcp.Server, store recurring.Service, logger *lo
 		Description: "Preview recurring expenses that are due today without recording transactions.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.previewDueTransactions)
+
+	mcp.AddTool[materializeDueTransactionsInput, any](srv, &mcp.Tool{
+		Name:        "materialize_due_transactions",
+		Description: "Create ordinary expense transactions for all recurring expenses currently due.",
+		Annotations: writableToolAnnotations(true, true),
+	}, tools.materializeDueTransactions)
 }
 
 func (t *recurringTools) createRecurringTransaction(ctx context.Context, _ *mcp.CallToolRequest, in createRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
@@ -159,6 +176,25 @@ func (t *recurringTools) previewDueTransactions(ctx context.Context, _ *mcp.Call
 	})
 }
 
+func (t *recurringTools) materializeDueTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ materializeDueTransactionsInput) (*mcp.CallToolResult, any, error) {
+	res, err := t.store.MaterializeDue(ctx)
+	if err != nil {
+		return t.mapRecurringError("materialize_due_transactions", err)
+	}
+	if res.Transactions == nil {
+		res.Transactions = []contract.Transaction{}
+	}
+
+	return toolOK(materializeDueTransactionsOutput{
+		OK:           true,
+		AsOfDate:     res.AsOfDate,
+		Month:        res.Month,
+		Created:      res.Created,
+		TotalAmount:  res.TotalAmount,
+		Transactions: res.Transactions,
+	})
+}
+
 func (t *recurringTools) mapRecurringError(tool string, err error) (*mcp.CallToolResult, any, error) {
 	var notFound *recurring.NotFoundError
 	if errors.As(err, &notFound) {
@@ -192,6 +228,21 @@ func (t *recurringTools) mapRecurringError(tool string, err error) (*mcp.CallToo
 			map[string]any{
 				"category":          categoryInactive.Category,
 				"active_categories": activeCategories(categoryInactive.ActiveCategories),
+			},
+		)))
+	}
+
+	var recurringCategoryInactive *recurring.RecurringCategoryInactiveError
+	if errors.As(err, &recurringCategoryInactive) {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeRecurringCategoryInactive,
+			fmt.Sprintf("Recurring transaction %d for '%s' references inactive category '%s'.", recurringCategoryInactive.RecurringTransactionID, recurringCategoryInactive.Merchant, recurringCategoryInactive.Category),
+			false,
+			map[string]any{
+				"recurring_transaction_id": recurringCategoryInactive.RecurringTransactionID,
+				"merchant":                 recurringCategoryInactive.Merchant,
+				"category":                 recurringCategoryInactive.Category,
+				"due_date":                 recurringCategoryInactive.DueDate,
 			},
 		)))
 	}

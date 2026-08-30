@@ -21,6 +21,7 @@ const (
 	ErrorCodeBudgetSourceEmpty            ErrorCode = "budget_source_empty"
 	ErrorCodeIdempotencyConflict          ErrorCode = "idempotency_conflict"
 	ErrorCodeRecurringTransactionNotFound ErrorCode = "recurring_transaction_not_found"
+	ErrorCodeRecurringCategoryInactive    ErrorCode = "recurring_category_inactive"
 	ErrorCodeInternalError                ErrorCode = "internal_error"
 )
 
@@ -152,6 +153,8 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The idempotency key conflicts with an existing request."
 	case ErrorCodeRecurringTransactionNotFound:
 		return "The requested recurring transaction was not found."
+	case ErrorCodeRecurringCategoryInactive:
+		return "The recurring transaction references an inactive category."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:

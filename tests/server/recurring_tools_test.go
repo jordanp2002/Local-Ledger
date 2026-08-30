@@ -152,7 +152,6 @@ func TestListRecurringTransactionsTool(t *testing.T) {
 		t.Fatalf("recurring_transactions = %v, want empty array", gotEmpty["recurring_transactions"])
 	}
 
-	// Create categories and templates
 	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
 	callTool(t, session, "create_category", map[string]any{"name": "Housing"})
 
@@ -211,7 +210,6 @@ func TestDisableRecurringTransactionTool(t *testing.T) {
 		n, _ := v.Int64()
 		id = n
 	}
-
 
 	disableRes1 := callTool(t, session, "disable_recurring_transaction", map[string]any{"id": id})
 	if disableRes1.IsError {
@@ -433,6 +431,182 @@ func TestPreviewDueTransactionsToolClosedDB(t *testing.T) {
 	raw := structuredJSON(t, result)
 	if leakedInternalError(raw) {
 		t.Fatalf("internal error leaked driver details: %s", raw)
+	}
+}
+
+func TestMaterializeDueTransactionsToolDiscoveryAndSchema(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+
+	result, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	tool := toolByName(t, result.Tools, "materialize_due_transactions")
+	if tool == nil {
+		t.Fatal("materialize_due_transactions is not discoverable")
+	}
+	schema := schemaObject(t, tool.InputSchema)
+	if schema["type"] != "object" {
+		t.Fatalf("materialize_due_transactions input schema type = %v, want object", schema["type"])
+	}
+	required, _ := schema["required"].([]any)
+	if len(required) != 0 {
+		t.Fatalf("materialize_due_transactions required = %v, want no required fields", required)
+	}
+	if tool.Annotations == nil || tool.Annotations.ReadOnlyHint {
+		t.Fatalf("annotations = %#v, want writable", tool.Annotations)
+	}
+	if !tool.Annotations.IdempotentHint {
+		t.Fatalf("idempotentHint = false, want true")
+	}
+	if tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
+		t.Fatalf("destructiveHint = %v, want true", tool.Annotations.DestructiveHint)
+	}
+	if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
+		t.Fatalf("openWorldHint = %v, want false", tool.Annotations.OpenWorldHint)
+	}
+}
+
+func TestMaterializeDueTransactionsToolSuccessAndIntegration(t *testing.T) {
+	toronto := time.FixedZone("EDT", -4*60*60)
+	now := func() time.Time { return time.Date(2026, 8, 30, 10, 0, 0, 0, toronto) }
+	session := connectCategorySession(t, openCategoryDB(t), now, nil)
+
+	callTool(t, session, "create_category", map[string]any{"name": "Housing"})
+	callTool(t, session, "create_category", map[string]any{"name": "Entertainment"})
+	callTool(t, session, "create_monthly_budget", map[string]any{
+		"month": "2026-08",
+		"budgets": []map[string]any{
+			{"category": "Housing", "amount": "2000.00"},
+			{"category": "Entertainment", "amount": "100.00"},
+		},
+	})
+
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Rent",
+		"amount":       "1500.00",
+		"category":     "Housing",
+		"day_of_month": 1,
+	})
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Netflix",
+		"amount":       "22.99",
+		"category":     "Entertainment",
+		"day_of_month": 15,
+		"note":         "Monthly subscription",
+	})
+
+	result := callTool(t, session, "materialize_due_transactions", map[string]any{})
+	if result.IsError {
+		t.Fatalf("materialize_due_transactions error: %s", structuredJSON(t, result))
+	}
+
+	got := structuredObject(t, result)
+	if got["ok"] != true {
+		t.Fatalf("ok = %v, want true", got["ok"])
+	}
+	if got["as_of_date"] != "2026-08-30" || got["month"] != "2026-08" {
+		t.Errorf("dates = (%v, %v)", got["as_of_date"], got["month"])
+	}
+	if got["created"] != float64(2) && got["created"] != int64(2) {
+		t.Errorf("created = %v, want 2", got["created"])
+	}
+	if got["total_amount"] != "1522.99" {
+		t.Errorf("total_amount = %v, want 1522.99", got["total_amount"])
+	}
+
+	txns, ok := got["transactions"].([]any)
+	if !ok || len(txns) != 2 {
+		t.Fatalf("transactions = %v, want 2 items", got["transactions"])
+	}
+	rentTxn := txns[0].(map[string]any)
+	if rentTxn["merchant"] != "Rent" || rentTxn["amount"] != "1500.00" || rentTxn["date"] != "2026-08-01" {
+		t.Errorf("rentTxn = %v", rentTxn)
+	}
+	netflixTxn := txns[1].(map[string]any)
+	if netflixTxn["merchant"] != "Netflix" || netflixTxn["amount"] != "22.99" || netflixTxn["date"] != "2026-08-15" || netflixTxn["note"] != "Monthly subscription" {
+		t.Errorf("netflixTxn = %v", netflixTxn)
+	}
+
+	repeatResult := callTool(t, session, "materialize_due_transactions", map[string]any{})
+	if repeatResult.IsError {
+		t.Fatalf("repeat error: %s", structuredJSON(t, repeatResult))
+	}
+	repeatGot := structuredObject(t, repeatResult)
+	if repeatGot["created"] != float64(0) && repeatGot["created"] != int64(0) {
+		t.Errorf("repeat created = %v, want 0", repeatGot["created"])
+	}
+
+	summaryResult := callTool(t, session, "get_monthly_summary", map[string]any{"month": "2026-08"})
+	if summaryResult.IsError {
+		t.Fatalf("get_monthly_summary error: %s", structuredJSON(t, summaryResult))
+	}
+	summaryObj := structuredObject(t, summaryResult)
+	if summaryObj["total_spending"] != "1522.99" {
+		t.Errorf("summary total_spending = %v, want 1522.99", summaryObj["total_spending"])
+	}
+
+	listResult := callTool(t, session, "list_transactions", map[string]any{"start_date": "2026-08-01", "end_date": "2026-08-31"})
+	if listResult.IsError {
+		t.Fatalf("list_transactions error: %s", structuredJSON(t, listResult))
+	}
+	listObj := structuredObject(t, listResult)
+	listRows, ok := listObj["transactions"].([]any)
+	if !ok {
+		t.Fatalf("transactions = %T, want array", listObj["transactions"])
+	}
+	if len(listRows) != 2 {
+		t.Fatalf("list_transactions rows = %d, want 2", len(listRows))
+	}
+}
+
+func TestMaterializeDueTransactionsToolBlockedCategory(t *testing.T) {
+	toronto := time.FixedZone("EDT", -4*60*60)
+	now := func() time.Time { return time.Date(2026, 8, 30, 10, 0, 0, 0, toronto) }
+	session := connectCategorySession(t, openCategoryDB(t), now, nil)
+
+	callTool(t, session, "create_category", map[string]any{"name": "Housing"})
+	callTool(t, session, "create_category", map[string]any{"name": "Fitness"})
+
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Rent",
+		"amount":       "1500.00",
+		"category":     "Housing",
+		"day_of_month": 1,
+	})
+	callTool(t, session, "create_recurring_transaction", map[string]any{
+		"merchant":     "Gym",
+		"amount":       "50.00",
+		"category":     "Fitness",
+		"day_of_month": 10,
+	})
+	callTool(t, session, "disable_category", map[string]any{"name": "Fitness"})
+
+	result := callTool(t, session, "materialize_due_transactions", map[string]any{})
+	if !result.IsError {
+		t.Fatal("materialize_due_transactions IsError = false, want true for blocked category")
+	}
+
+	envelope := decodeRecurringErrorEnvelope(t, result)
+	if envelope.Error.Code != contract.ErrorCodeRecurringCategoryInactive {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, contract.ErrorCodeRecurringCategoryInactive)
+	}
+	if envelope.Error.Details["merchant"] != "Gym" || envelope.Error.Details["category"] != "Fitness" || envelope.Error.Details["due_date"] != "2026-08-10" {
+		t.Fatalf("details = %v", envelope.Error.Details)
+	}
+
+	listResult := callTool(t, session, "list_transactions", map[string]any{})
+	if listResult.IsError {
+		t.Fatalf("list_transactions error: %s", structuredJSON(t, listResult))
+	}
+	listObj := structuredObject(t, listResult)
+	listRows, ok := listObj["transactions"].([]any)
+	if !ok {
+		t.Fatalf("transactions = %T, want array", listObj["transactions"])
+	}
+	if len(listRows) != 0 {
+		t.Fatalf("transactions created after blocker rollback: %d", len(listRows))
 	}
 }
 
