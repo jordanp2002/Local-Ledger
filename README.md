@@ -19,11 +19,13 @@ Local Ledger also supports a confirmation-first [recurring-expense workflow](doc
 
 ## Quick start
 
-Requires Go 1.26 or newer.
+Requires Go 1.26 or newer. From the Local Ledger project directory, run:
 
 ```sh
-go run ./cmd/local-finance-mcp
+go run ./cmd/local-ledger
 ```
+
+This starts the Local Ledger MCP server over stdio.
 
 The database is created at:
 
@@ -34,7 +36,7 @@ The database is created at:
 To use a different location:
 
 ```sh
-LOCAL_FINANCE_DB_PATH=/absolute/path/finance.db go run ./cmd/local-finance-mcp
+LOCAL_FINANCE_DB_PATH=/absolute/path/finance.db go run ./cmd/local-ledger
 ```
 
 ## Documentation
@@ -44,7 +46,7 @@ LOCAL_FINANCE_DB_PATH=/absolute/path/finance.db go run ./cmd/local-finance-mcp
 ## Build
 
 ```sh
-go build ./cmd/local-finance-mcp
+go build ./cmd/local-ledger
 ```
 
 ## Test
