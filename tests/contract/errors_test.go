@@ -29,6 +29,7 @@ func TestErrorCodesMatchApprovedContract(t *testing.T) {
 		{name: "budget source not found", code: contract.ErrorCodeBudgetSourceNotFound, want: "budget_source_not_found"},
 		{name: "budget source empty", code: contract.ErrorCodeBudgetSourceEmpty, want: "budget_source_empty"},
 		{name: "idempotency conflict", code: contract.ErrorCodeIdempotencyConflict, want: "idempotency_conflict"},
+		{name: "recurring transaction not found", code: contract.ErrorCodeRecurringTransactionNotFound, want: "recurring_transaction_not_found"},
 		{name: "internal error", code: contract.ErrorCodeInternalError, want: "internal_error"},
 	}
 

@@ -104,3 +104,17 @@ type MerchantSpending struct {
 	Spending         string `json:"spending"`
 	TransactionCount int64  `json:"transaction_count"`
 }
+
+type RecurringTransaction struct {
+	ID             int64   `json:"id"`
+	Merchant       string  `json:"merchant"`
+	Amount         string  `json:"amount"`
+	CategoryID     int64   `json:"category_id"`
+	Category       string  `json:"category"`
+	CategoryActive bool    `json:"category_active"`
+	DayOfMonth     int64   `json:"day_of_month"`
+	Note           *string `json:"note"`
+	Active         bool    `json:"active"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+}

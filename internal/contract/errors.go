@@ -6,21 +6,22 @@ import "encoding/json"
 type ErrorCode string
 
 const (
-	ErrorCodeInvalidInput               ErrorCode = "invalid_input"
-	ErrorCodeCategoryNotFound           ErrorCode = "category_not_found"
-	ErrorCodeCategoryAlreadyExists      ErrorCode = "category_already_exists"
-	ErrorCodeCategoryInactive           ErrorCode = "category_inactive"
-	ErrorCodeKnownMerchantNotFound      ErrorCode = "known_merchant_not_found"
-	ErrorCodeKnownMerchantAlreadyExists ErrorCode = "known_merchant_already_exists"
-	ErrorCodeMerchantCategoryRequired   ErrorCode = "merchant_category_required"
-	ErrorCodeMerchantCategoryInactive   ErrorCode = "merchant_category_inactive"
-	ErrorCodeTransactionNotFound        ErrorCode = "transaction_not_found"
-	ErrorCodeMonthlyBudgetAlreadyExists ErrorCode = "monthly_budget_already_exists"
-	ErrorCodeMonthlyBudgetNotFound      ErrorCode = "monthly_budget_not_found"
-	ErrorCodeBudgetSourceNotFound       ErrorCode = "budget_source_not_found"
-	ErrorCodeBudgetSourceEmpty          ErrorCode = "budget_source_empty"
-	ErrorCodeIdempotencyConflict        ErrorCode = "idempotency_conflict"
-	ErrorCodeInternalError              ErrorCode = "internal_error"
+	ErrorCodeInvalidInput                 ErrorCode = "invalid_input"
+	ErrorCodeCategoryNotFound             ErrorCode = "category_not_found"
+	ErrorCodeCategoryAlreadyExists        ErrorCode = "category_already_exists"
+	ErrorCodeCategoryInactive             ErrorCode = "category_inactive"
+	ErrorCodeKnownMerchantNotFound        ErrorCode = "known_merchant_not_found"
+	ErrorCodeKnownMerchantAlreadyExists   ErrorCode = "known_merchant_already_exists"
+	ErrorCodeMerchantCategoryRequired     ErrorCode = "merchant_category_required"
+	ErrorCodeMerchantCategoryInactive     ErrorCode = "merchant_category_inactive"
+	ErrorCodeTransactionNotFound          ErrorCode = "transaction_not_found"
+	ErrorCodeMonthlyBudgetAlreadyExists   ErrorCode = "monthly_budget_already_exists"
+	ErrorCodeMonthlyBudgetNotFound        ErrorCode = "monthly_budget_not_found"
+	ErrorCodeBudgetSourceNotFound         ErrorCode = "budget_source_not_found"
+	ErrorCodeBudgetSourceEmpty            ErrorCode = "budget_source_empty"
+	ErrorCodeIdempotencyConflict          ErrorCode = "idempotency_conflict"
+	ErrorCodeRecurringTransactionNotFound ErrorCode = "recurring_transaction_not_found"
+	ErrorCodeInternalError                ErrorCode = "internal_error"
 )
 
 type Error struct {
@@ -149,6 +150,8 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The earlier monthly budget has no active categories to carry forward."
 	case ErrorCodeIdempotencyConflict:
 		return "The idempotency key conflicts with an existing request."
+	case ErrorCodeRecurringTransactionNotFound:
+		return "The requested recurring transaction was not found."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:

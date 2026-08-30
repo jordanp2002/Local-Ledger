@@ -97,3 +97,27 @@ func TestTransactionJSONShapePreservesNonNullNote(t *testing.T) {
 		t.Fatalf("transaction JSON = %s, want note string and all fields", got)
 	}
 }
+
+func TestRecurringTransactionJSONShape(t *testing.T) {
+	got, err := json.Marshal(contract.RecurringTransaction{
+		ID:             1,
+		Merchant:       "Netflix",
+		Amount:         "22.99",
+		CategoryID:     3,
+		Category:       "Entertainment",
+		CategoryActive: true,
+		DayOfMonth:     15,
+		Note:           nil,
+		Active:         true,
+		CreatedAt:      "2026-08-30T12:00:00Z",
+		UpdatedAt:      "2026-08-30T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("marshal recurring transaction: %v", err)
+	}
+
+	want := `{"id":1,"merchant":"Netflix","amount":"22.99","category_id":3,"category":"Entertainment","category_active":true,"day_of_month":15,"note":null,"active":true,"created_at":"2026-08-30T12:00:00Z","updated_at":"2026-08-30T12:00:00Z"}`
+	if string(got) != want {
+		t.Fatalf("recurring transaction JSON = %s, want %s", got, want)
+	}
+}

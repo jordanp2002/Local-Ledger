@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"budgets", "categories", "known_merchants", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -74,6 +74,12 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if countNonConstraintIndexes(indexes["known_merchants"]) != 0 {
 		t.Fatalf("known_merchants has a speculative non-constraint index: %v", indexes["known_merchants"])
 	}
+	if countNonConstraintIndexes(indexes["recurring_transactions"]) != 0 {
+		t.Fatalf("recurring_transactions has a speculative non-constraint index: %v", indexes["recurring_transactions"])
+	}
+	if countNonConstraintIndexes(indexes["recurring_transaction_runs"]) != 0 {
+		t.Fatalf("recurring_transaction_runs has a speculative non-constraint index: %v", indexes["recurring_transaction_runs"])
+	}
 	if countNonConstraintIndexes(indexes["transaction_imports"]) != 0 {
 		t.Fatalf("transaction_imports has a speculative non-constraint index: %v", indexes["transaction_imports"])
 	}
@@ -95,13 +101,15 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	}
 
 	wantForeignKeys := map[string]bool{
-		"categories":               false,
-		"budgets":                  true,
-		"transactions":             true,
-		"known_merchants":          true,
-		"transaction_imports":      false,
-		"transaction_import_items": true,
-		"transaction_idempotency":  true,
+		"categories":                 false,
+		"budgets":                    true,
+		"transactions":               true,
+		"known_merchants":            true,
+		"recurring_transactions":     true,
+		"recurring_transaction_runs": true,
+		"transaction_imports":        false,
+		"transaction_import_items":   true,
+		"transaction_idempotency":    true,
 	}
 	for _, table := range wantTables {
 		foreignKeys, err := schemaForeignKeys(ctx, db, table)
@@ -114,6 +122,10 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		}
 		if table == "transaction_idempotency" {
 			assertIdempotencyForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "recurring_transaction_runs" {
+			assertRecurringRunForeignKeys(t, foreignKeys)
 			continue
 		}
 		if !wantForeignKeys[table] {
@@ -290,8 +302,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 3 {
-		t.Fatalf("reopened user_version = %d, want 3", version)
+	if version != 4 {
+		t.Fatalf("reopened user_version = %d, want 4", version)
 	}
 
 	var categoryName string
@@ -515,6 +527,31 @@ func assertImportItemForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
 	}
 	if importFK.onDelete != "RESTRICT" && importFK.onDelete != "NO ACTION" {
 		t.Fatalf("import_id delete action = %q, want RESTRICT or NO ACTION", importFK.onDelete)
+	}
+	txnFK, ok := byFrom["transaction_id"]
+	if !ok || txnFK.table != "transactions" || txnFK.to != "id" {
+		t.Fatalf("transaction_id foreign key = %v, want transactions(id)", txnFK)
+	}
+	if txnFK.onDelete != "SET NULL" {
+		t.Fatalf("transaction_id delete action = %q, want SET NULL", txnFK.onDelete)
+	}
+}
+
+func assertRecurringRunForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 2 {
+		t.Fatalf("recurring_transaction_runs foreign keys = %v, want 2", foreignKeys)
+	}
+	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
+	for _, foreignKey := range foreignKeys {
+		byFrom[foreignKey.from] = foreignKey
+	}
+	tmplFK, ok := byFrom["recurring_transaction_id"]
+	if !ok || tmplFK.table != "recurring_transactions" || tmplFK.to != "id" {
+		t.Fatalf("recurring_transaction_id foreign key = %v, want recurring_transactions(id)", tmplFK)
+	}
+	if tmplFK.onDelete != "RESTRICT" && tmplFK.onDelete != "NO ACTION" {
+		t.Fatalf("recurring_transaction_id delete action = %q, want RESTRICT or NO ACTION", tmplFK.onDelete)
 	}
 	txnFK, ok := byFrom["transaction_id"]
 	if !ok || txnFK.table != "transactions" || txnFK.to != "id" {
