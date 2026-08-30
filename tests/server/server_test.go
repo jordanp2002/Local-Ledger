@@ -38,7 +38,7 @@ func TestStdioLifecycle(t *testing.T) {
 			closeSession(t, session)
 		}
 	}()
-	if result := session.InitializeResult(); result == nil || result.ServerInfo == nil || result.ServerInfo.Name != "local-finance-mcp" {
+	if result := session.InitializeResult(); result == nil || result.ServerInfo == nil || result.ServerInfo.Name != "local-finance-mcp" || result.ServerInfo.Version != "0.2.0" {
 		t.Fatalf("unexpected initialize result: %#v", result)
 	}
 

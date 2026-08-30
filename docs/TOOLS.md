@@ -46,6 +46,23 @@
 | `compare_months` | Compare two budgeted months. |
 | `get_monthly_series` | Review up to 24 months in order. |
 
+## Recurring-expense flow
+
+1. Create recurring templates with `create_recurring_transaction`.
+2. Call `preview_due_transactions` to see what is due. Preview does not write anything.
+3. Show the preview to the user and ask them to confirm it.
+4. After confirmation, call `materialize_due_transactions` to record the due expenses.
+
+Local Ledger does not run continuously and has no internal scheduler. Recurring
+expenses are checked only when an MCP client calls the preview or materialization
+tools. An external automation may initiate that check, but scheduling remains
+outside Local Ledger.
+
+Materialization is atomic and retry-safe: either the full due set is recorded or
+none of it is, and retrying does not create duplicates. Generated rows are
+ordinary expense transactions, so they appear in transaction lists and every
+spending report.
+
 ## Basic flow
 
 1. Create categories.

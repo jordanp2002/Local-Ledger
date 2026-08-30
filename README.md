@@ -15,6 +15,8 @@ While this works and is still effective for my needs, I thought an MCP would be 
 
 [See all available tools and what they are used for.](docs/TOOLS.md)
 
+Local Ledger also supports a confirmation-first [recurring-expense workflow](docs/TOOLS.md#recurring-expense-flow).
+
 ## Quick start
 
 Requires Go 1.26 or newer.
