@@ -37,10 +37,12 @@ func (s *Store) Compare(ctx context.Context, fromMonth, toMonth string) (Compari
 }
 
 type comparisonMonth struct {
-	month         string
-	amounts       map[int64]*categoryAmounts
-	totalBudget   int64
-	totalSpending int64
+	month                   string
+	amounts                 map[int64]*categoryAmounts
+	totalBaseBudget         int64
+	totalRolloverAdjustment int64
+	totalBudget             int64
+	totalSpending           int64
 }
 
 func (s *Store) compare(ctx context.Context, fromMonth, toMonth string) (ComparisonResult, []contract.FieldIssue, error) {
@@ -68,6 +70,14 @@ func (s *Store) compare(ctx context.Context, fromMonth, toMonth string) (Compari
 		return ComparisonResult{}, nil, fmtOverflow("remaining")
 	}
 
+	baseBudgetChange, ok := checkedSubtract(to.totalBaseBudget, from.totalBaseBudget)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("base budget change")
+	}
+	rolloverAdjustmentChange, ok := checkedSubtract(to.totalRolloverAdjustment, from.totalRolloverAdjustment)
+	if !ok {
+		return ComparisonResult{}, nil, fmtOverflow("rollover adjustment change")
+	}
 	budgetChange, ok := checkedSubtract(to.totalBudget, from.totalBudget)
 	if !ok {
 		return ComparisonResult{}, nil, fmtOverflow("budget change")
@@ -94,7 +104,7 @@ func (s *Store) compare(ctx context.Context, fromMonth, toMonth string) (Compari
 	if err != nil {
 		return ComparisonResult{}, nil, err
 	}
-	change, err := formatComparisonChange(budgetChange, spendingChange, remainingChange)
+	change, err := formatComparisonChange(baseBudgetChange, rolloverAdjustmentChange, budgetChange, spendingChange, remainingChange)
 	if err != nil {
 		return ComparisonResult{}, nil, err
 	}
@@ -123,7 +133,7 @@ func loadComparisonMonth(ctx context.Context, tx *sql.Tx, month string) (compari
 	if err != nil {
 		return comparisonMonth{}, err
 	}
-	amounts, totalBudget, err := loadMonthBudgets(ctx, tx, month)
+	amounts, totals, err := loadMonthBudgets(ctx, tx, month)
 	if err != nil {
 		return comparisonMonth{}, err
 	}
@@ -132,22 +142,24 @@ func loadComparisonMonth(ctx context.Context, tx *sql.Tx, month string) (compari
 		return comparisonMonth{}, err
 	}
 	return comparisonMonth{
-		month:         month,
-		amounts:       amounts,
-		totalBudget:   totalBudget,
-		totalSpending: totalSpending,
+		month:                   month,
+		amounts:                 amounts,
+		totalBaseBudget:         totals.baseBudget,
+		totalRolloverAdjustment: totals.rolloverAdjustment,
+		totalBudget:             totals.totalBudget,
+		totalSpending:           totalSpending,
 	}, nil
 }
 
 func comparisonCategories(ctx context.Context, tx *sql.Tx, from, to map[int64]*categoryAmounts) ([]contract.ComparisonCategory, error) {
 	ids := make(map[int64]struct{}, len(from)+len(to))
 	for id, row := range from {
-		if row.budget > 0 || row.spending > 0 {
+		if row.baseBudget != 0 || row.rolloverAdjustment != 0 || row.budget != 0 || row.spending != 0 {
 			ids[id] = struct{}{}
 		}
 	}
 	for id, row := range to {
-		if row.budget > 0 || row.spending > 0 {
+		if row.baseBudget != 0 || row.rolloverAdjustment != 0 || row.budget != 0 || row.spending != 0 {
 			ids[id] = struct{}{}
 		}
 	}
@@ -162,9 +174,17 @@ func comparisonCategories(ctx context.Context, tx *sql.Tx, from, to map[int64]*c
 	}
 	categories := make([]contract.ComparisonCategory, 0, len(ordered))
 	for _, id := range ordered {
-		fromBudget, fromSpending := categoryAmountsFor(from, id)
-		toBudget, toSpending := categoryAmountsFor(to, id)
+		fromBase, fromAdjustment, fromBudget, fromSpending := categoryAmountsFor(from, id)
+		toBase, toAdjustment, toBudget, toSpending := categoryAmountsFor(to, id)
 
+		baseBudgetChange, ok := checkedSubtract(toBase, fromBase)
+		if !ok {
+			return nil, fmtOverflow("category base budget change")
+		}
+		rolloverAdjustmentChange, ok := checkedSubtract(toAdjustment, fromAdjustment)
+		if !ok {
+			return nil, fmtOverflow("category rollover adjustment change")
+		}
 		budgetChange, ok := checkedSubtract(toBudget, fromBudget)
 		if !ok {
 			return nil, fmtOverflow("category budget change")
@@ -178,7 +198,12 @@ func comparisonCategories(ctx context.Context, tx *sql.Tx, from, to map[int64]*c
 			return nil, err
 		}
 
-		row, err := formatComparisonCategory(id, name, fromBudget, toBudget, budgetChange, fromSpending, toSpending, spendingChange)
+		row, err := formatComparisonCategory(id, name,
+			fromBase, toBase, baseBudgetChange,
+			fromAdjustment, toAdjustment, rolloverAdjustmentChange,
+			fromBudget, toBudget, budgetChange,
+			fromSpending, toSpending, spendingChange,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -187,12 +212,12 @@ func comparisonCategories(ctx context.Context, tx *sql.Tx, from, to map[int64]*c
 	return categories, nil
 }
 
-func categoryAmountsFor(amounts map[int64]*categoryAmounts, id int64) (int64, int64) {
+func categoryAmountsFor(amounts map[int64]*categoryAmounts, id int64) (int64, int64, int64, int64) {
 	row, ok := amounts[id]
 	if !ok {
-		return 0, 0
+		return 0, 0, 0, 0
 	}
-	return row.budget, row.spending
+	return row.baseBudget, row.rolloverAdjustment, row.budget, row.spending
 }
 
 func categoryName(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
@@ -204,7 +229,15 @@ func categoryName(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
 }
 
 func formatComparisonMonth(month comparisonMonth, remaining int64) (contract.ComparisonMonth, error) {
-	totalBudget, err := contract.FormatAmount(month.totalBudget)
+	totalBaseBudget, err := contract.FormatAmount(month.totalBaseBudget)
+	if err != nil {
+		return contract.ComparisonMonth{}, err
+	}
+	totalRolloverAdjustment, err := contract.FormatSignedAmount(month.totalRolloverAdjustment)
+	if err != nil {
+		return contract.ComparisonMonth{}, err
+	}
+	totalBudget, err := contract.FormatSignedAmount(month.totalBudget)
 	if err != nil {
 		return contract.ComparisonMonth{}, err
 	}
@@ -217,14 +250,24 @@ func formatComparisonMonth(month comparisonMonth, remaining int64) (contract.Com
 		return contract.ComparisonMonth{}, err
 	}
 	return contract.ComparisonMonth{
-		Month:         month.month,
-		TotalBudget:   totalBudget,
-		TotalSpending: totalSpending,
-		Remaining:     formattedRemaining,
+		Month:                   month.month,
+		TotalBaseBudget:         totalBaseBudget,
+		TotalRolloverAdjustment: totalRolloverAdjustment,
+		TotalBudget:             totalBudget,
+		TotalSpending:           totalSpending,
+		Remaining:               formattedRemaining,
 	}, nil
 }
 
-func formatComparisonChange(budget, spending, remaining int64) (contract.ComparisonChange, error) {
+func formatComparisonChange(baseBudget, rolloverAdjustment, budget, spending, remaining int64) (contract.ComparisonChange, error) {
+	totalBaseBudget, err := contract.FormatSignedAmount(baseBudget)
+	if err != nil {
+		return contract.ComparisonChange{}, err
+	}
+	totalRolloverAdjustment, err := contract.FormatSignedAmount(rolloverAdjustment)
+	if err != nil {
+		return contract.ComparisonChange{}, err
+	}
 	totalBudget, err := contract.FormatSignedAmount(budget)
 	if err != nil {
 		return contract.ComparisonChange{}, err
@@ -238,18 +281,51 @@ func formatComparisonChange(budget, spending, remaining int64) (contract.Compari
 		return contract.ComparisonChange{}, err
 	}
 	return contract.ComparisonChange{
-		TotalBudget:   totalBudget,
-		TotalSpending: totalSpending,
-		Remaining:     formattedRemaining,
+		TotalBaseBudget:         totalBaseBudget,
+		TotalRolloverAdjustment: totalRolloverAdjustment,
+		TotalBudget:             totalBudget,
+		TotalSpending:           totalSpending,
+		Remaining:               formattedRemaining,
 	}, nil
 }
 
-func formatComparisonCategory(id int64, name string, fromBudget, toBudget, budgetChange, fromSpending, toSpending, spendingChange int64) (contract.ComparisonCategory, error) {
-	formattedFromBudget, err := contract.FormatAmount(fromBudget)
+func formatComparisonCategory(
+	id int64,
+	name string,
+	fromBaseBudget, toBaseBudget, baseBudgetChange int64,
+	fromRolloverAdjustment, toRolloverAdjustment, rolloverAdjustmentChange int64,
+	fromBudget, toBudget, budgetChange int64,
+	fromSpending, toSpending, spendingChange int64,
+) (contract.ComparisonCategory, error) {
+	formattedFromBaseBudget, err := contract.FormatAmount(fromBaseBudget)
 	if err != nil {
 		return contract.ComparisonCategory{}, err
 	}
-	formattedToBudget, err := contract.FormatAmount(toBudget)
+	formattedToBaseBudget, err := contract.FormatAmount(toBaseBudget)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedBaseBudgetChange, err := contract.FormatSignedAmount(baseBudgetChange)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedFromRolloverAdjustment, err := contract.FormatSignedAmount(fromRolloverAdjustment)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedToRolloverAdjustment, err := contract.FormatSignedAmount(toRolloverAdjustment)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedRolloverAdjustmentChange, err := contract.FormatSignedAmount(rolloverAdjustmentChange)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedFromBudget, err := contract.FormatSignedAmount(fromBudget)
+	if err != nil {
+		return contract.ComparisonCategory{}, err
+	}
+	formattedToBudget, err := contract.FormatSignedAmount(toBudget)
 	if err != nil {
 		return contract.ComparisonCategory{}, err
 	}
@@ -270,13 +346,19 @@ func formatComparisonCategory(id int64, name string, fromBudget, toBudget, budge
 		return contract.ComparisonCategory{}, err
 	}
 	return contract.ComparisonCategory{
-		CategoryID:     id,
-		Category:       name,
-		FromBudget:     formattedFromBudget,
-		ToBudget:       formattedToBudget,
-		BudgetChange:   formattedBudgetChange,
-		FromSpending:   formattedFromSpending,
-		ToSpending:     formattedToSpending,
-		SpendingChange: formattedSpendingChange,
+		CategoryID:               id,
+		Category:                 name,
+		FromBaseBudget:           formattedFromBaseBudget,
+		ToBaseBudget:             formattedToBaseBudget,
+		BaseBudgetChange:         formattedBaseBudgetChange,
+		FromRolloverAdjustment:   formattedFromRolloverAdjustment,
+		ToRolloverAdjustment:     formattedToRolloverAdjustment,
+		RolloverAdjustmentChange: formattedRolloverAdjustmentChange,
+		FromBudget:               formattedFromBudget,
+		ToBudget:                 formattedToBudget,
+		BudgetChange:             formattedBudgetChange,
+		FromSpending:             formattedFromSpending,
+		ToSpending:               formattedToSpending,
+		SpendingChange:           formattedSpendingChange,
 	}, nil
 }

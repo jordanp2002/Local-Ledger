@@ -16,13 +16,16 @@ type monthlySummaryInput struct {
 }
 
 type monthlySummaryOutput struct {
-	OK            bool                              `json:"ok"`
-	Month         string                            `json:"month"`
-	TotalBudget   string                            `json:"total_budget"`
-	TotalSpending string                            `json:"total_spending"`
-	Remaining     string                            `json:"remaining"`
-	SpentOfBudget *string                           `json:"spent_of_budget"`
-	Categories    []contract.MonthlySummaryCategory `json:"categories"`
+	OK                      bool                              `json:"ok"`
+	Month                   string                            `json:"month"`
+	TotalBaseBudget         string                            `json:"total_base_budget"`
+	TotalSinkingFundOpening string                            `json:"total_sinking_fund_opening_balance"`
+	TotalRolloverAdjustment string                            `json:"total_rollover_adjustment"`
+	TotalBudget             string                            `json:"total_budget"`
+	TotalSpending           string                            `json:"total_spending"`
+	Remaining               string                            `json:"remaining"`
+	SpentOfBudget           *string                           `json:"spent_of_budget"`
+	Categories              []contract.MonthlySummaryCategory `json:"categories"`
 }
 
 type categorySummaryInput struct {
@@ -31,15 +34,19 @@ type categorySummaryInput struct {
 }
 
 type categorySummaryOutput struct {
-	OK               bool    `json:"ok"`
-	CategoryID       int64   `json:"category_id"`
-	Category         string  `json:"category"`
-	Month            string  `json:"month"`
-	Budget           string  `json:"budget"`
-	TotalSpending    string  `json:"total_spending"`
-	Remaining        string  `json:"remaining"`
-	SpentOfBudget    *string `json:"spent_of_budget"`
-	TransactionCount int64   `json:"transaction_count"`
+	OK                 bool    `json:"ok"`
+	CategoryID         int64   `json:"category_id"`
+	Category           string  `json:"category"`
+	Month              string  `json:"month"`
+	BaseBudget         string  `json:"base_budget"`
+	SinkingFund        bool    `json:"sinking_fund"`
+	SinkingFundOpening string  `json:"sinking_fund_opening_balance"`
+	RolloverAdjustment string  `json:"rollover_adjustment"`
+	Budget             string  `json:"budget"`
+	TotalSpending      string  `json:"total_spending"`
+	Remaining          string  `json:"remaining"`
+	SpentOfBudget      *string `json:"spent_of_budget"`
+	TransactionCount   int64   `json:"transaction_count"`
 }
 
 type compareMonthsInput struct {
@@ -56,26 +63,35 @@ type compareMonthsOutput struct {
 }
 
 type monthlySeriesInput struct {
-	FromMonth string  `json:"from_month"`
-	ToMonth   string  `json:"to_month"`
-	Category  *string `json:"category,omitempty"`
+	FromMonth         string  `json:"from_month"`
+	ToMonth           string  `json:"to_month"`
+	Category          *string `json:"category,omitempty"`
+	IncludeCategories bool    `json:"include_categories,omitempty"`
 }
 
 type monthlySeriesOutput struct {
-	OK        bool                       `json:"ok"`
-	FromMonth string                     `json:"from_month"`
-	ToMonth   string                     `json:"to_month"`
-	Category  *string                    `json:"category"`
-	Months    []monthlySeriesMonthOutput `json:"months"`
+	OK                bool                       `json:"ok"`
+	FromMonth         string                     `json:"from_month"`
+	ToMonth           string                     `json:"to_month"`
+	Category          *string                    `json:"category"`
+	IncludeCategories bool                       `json:"include_categories"`
+	Months            []monthlySeriesMonthOutput `json:"months"`
 }
 
 type monthlySeriesMonthOutput struct {
-	Month            string  `json:"month"`
-	TotalBudget      *string `json:"total_budget"`
-	TotalSpending    string  `json:"total_spending"`
-	Remaining        *string `json:"remaining"`
-	SpentOfBudget    *string `json:"spent_of_budget"`
-	TransactionCount int64   `json:"transaction_count"`
+	Month                   string  `json:"month"`
+	TotalBaseBudget         *string `json:"total_base_budget"`
+	TotalSinkingFundOpening *string `json:"total_sinking_fund_opening_balance"`
+	TotalRolloverAdjustment *string `json:"total_rollover_adjustment"`
+	TotalBudget             *string `json:"total_budget"`
+	TotalSpending           string  `json:"total_spending"`
+	Remaining               *string `json:"remaining"`
+	SpentOfBudget           *string `json:"spent_of_budget"`
+	TransactionCount        int64   `json:"transaction_count"`
+	// A pointer preserves the compact response when category details are not
+	// requested while still encoding an explicitly requested empty axis as []
+	// rather than null or an omitted field.
+	Categories *[]contract.MonthlySeriesCategory `json:"categories,omitempty"`
 }
 
 type spendingSummaryInput struct {
@@ -144,7 +160,7 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 
 	mcp.AddTool[monthlySeriesInput, any](srv, &mcp.Tool{
 		Name:        "get_monthly_series",
-		Description: "Return contiguous monthly spending and budget rows over an inclusive month range.",
+		Description: "Return contiguous monthly spending and budget rows over an inclusive month range, optionally with a complete category-by-month comparison.",
 		Annotations: readOnlyToolAnnotations(),
 	}, tools.getMonthlySeries)
 
@@ -175,13 +191,16 @@ func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolReq
 		categories = []contract.MonthlySummaryCategory{}
 	}
 	return toolOK(monthlySummaryOutput{
-		OK:            true,
-		Month:         result.Month,
-		TotalBudget:   result.TotalBudget,
-		TotalSpending: result.TotalSpending,
-		Remaining:     result.Remaining,
-		SpentOfBudget: result.SpentOfBudget,
-		Categories:    categories,
+		OK:                      true,
+		Month:                   result.Month,
+		TotalBaseBudget:         result.TotalBaseBudget,
+		TotalSinkingFundOpening: result.TotalSinkingFundOpening,
+		TotalRolloverAdjustment: result.TotalRolloverAdjustment,
+		TotalBudget:             result.TotalBudget,
+		TotalSpending:           result.TotalSpending,
+		Remaining:               result.Remaining,
+		SpentOfBudget:           result.SpentOfBudget,
+		Categories:              categories,
 	})
 }
 
@@ -195,15 +214,19 @@ func (t *summaryTools) getCategorySummary(ctx context.Context, _ *mcp.CallToolRe
 	}
 
 	return toolOK(categorySummaryOutput{
-		OK:               true,
-		CategoryID:       result.CategoryID,
-		Category:         result.Category,
-		Month:            result.Month,
-		Budget:           result.Budget,
-		TotalSpending:    result.TotalSpending,
-		Remaining:        result.Remaining,
-		SpentOfBudget:    result.SpentOfBudget,
-		TransactionCount: result.TransactionCount,
+		OK:                 true,
+		CategoryID:         result.CategoryID,
+		Category:           result.Category,
+		Month:              result.Month,
+		BaseBudget:         result.BaseBudget,
+		SinkingFund:        result.SinkingFund,
+		SinkingFundOpening: result.SinkingFundOpening,
+		RolloverAdjustment: result.RolloverAdjustment,
+		Budget:             result.Budget,
+		TotalSpending:      result.TotalSpending,
+		Remaining:          result.Remaining,
+		SpentOfBudget:      result.SpentOfBudget,
+		TransactionCount:   result.TransactionCount,
 	})
 }
 
@@ -231,9 +254,10 @@ func (t *summaryTools) compareMonths(ctx context.Context, _ *mcp.CallToolRequest
 
 func (t *summaryTools) getMonthlySeries(ctx context.Context, _ *mcp.CallToolRequest, in monthlySeriesInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Series(ctx, summary.SeriesInput{
-		FromMonth: in.FromMonth,
-		ToMonth:   in.ToMonth,
-		Category:  in.Category,
+		FromMonth:         in.FromMonth,
+		ToMonth:           in.ToMonth,
+		Category:          in.Category,
+		IncludeCategories: in.IncludeCategories,
 	})
 	if len(fields) != 0 {
 		return toolError(invalidSummaryInputEnvelope(fields))
@@ -244,21 +268,34 @@ func (t *summaryTools) getMonthlySeries(ctx context.Context, _ *mcp.CallToolRequ
 
 	months := make([]monthlySeriesMonthOutput, 0, len(result.Months))
 	for _, month := range result.Months {
+		var categories *[]contract.MonthlySeriesCategory
+		if result.IncludeCategories {
+			categoryRows := month.Categories
+			if categoryRows == nil {
+				categoryRows = []contract.MonthlySeriesCategory{}
+			}
+			categories = &categoryRows
+		}
 		months = append(months, monthlySeriesMonthOutput{
-			Month:            month.Month,
-			TotalBudget:      month.TotalBudget,
-			TotalSpending:    month.TotalSpending,
-			Remaining:        month.Remaining,
-			SpentOfBudget:    month.SpentOfBudget,
-			TransactionCount: month.TransactionCount,
+			Month:                   month.Month,
+			TotalBaseBudget:         month.TotalBaseBudget,
+			TotalSinkingFundOpening: month.TotalSinkingFundOpening,
+			TotalRolloverAdjustment: month.TotalRolloverAdjustment,
+			TotalBudget:             month.TotalBudget,
+			TotalSpending:           month.TotalSpending,
+			Remaining:               month.Remaining,
+			SpentOfBudget:           month.SpentOfBudget,
+			TransactionCount:        month.TransactionCount,
+			Categories:              categories,
 		})
 	}
 	return toolOK(monthlySeriesOutput{
-		OK:        true,
-		FromMonth: result.FromMonth,
-		ToMonth:   result.ToMonth,
-		Category:  result.Category,
-		Months:    months,
+		OK:                true,
+		FromMonth:         result.FromMonth,
+		ToMonth:           result.ToMonth,
+		Category:          result.Category,
+		IncludeCategories: result.IncludeCategories,
+		Months:            months,
 	})
 }
 

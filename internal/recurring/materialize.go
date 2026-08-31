@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
 )
 
@@ -21,6 +22,10 @@ func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error
 		return MaterializeDueResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	before, err := rollover.Snapshot(ctx, tx)
+	if err != nil {
+		return MaterializeDueResult{}, err
+	}
 
 	now := s.Now()
 	timestamp := now.UTC().Format("2006-01-02T15:04:05.000Z")
@@ -44,11 +49,12 @@ func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error
 			return MaterializeDueResult{}, err
 		}
 		return MaterializeDueResult{
-			AsOfDate:     preview.AsOfDate,
-			Month:        preview.Month,
-			Created:      0,
-			TotalAmount:  "0.00",
-			Transactions: []contract.Transaction{},
+			AsOfDate:       preview.AsOfDate,
+			Month:          preview.Month,
+			Created:        0,
+			TotalAmount:    "0.00",
+			Transactions:   []contract.Transaction{},
+			RolloverOffers: []contract.RolloverOffer{},
 		}, nil
 	}
 
@@ -85,16 +91,25 @@ func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error
 
 		createdList = append(createdList, recorded)
 	}
+	flattened := make([]rollover.OfferChange, 0)
+	for _, recorded := range createdList {
+		flattened = append(flattened, rollover.OfferChangesForTransaction(recorded)...)
+	}
+	offers, err := rollover.BuildOffers(ctx, tx, before, flattened)
+	if err != nil {
+		return MaterializeDueResult{}, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return MaterializeDueResult{}, err
 	}
 
 	return MaterializeDueResult{
-		AsOfDate:     preview.AsOfDate,
-		Month:        preview.Month,
-		Created:      int64(len(createdList)),
-		TotalAmount:  preview.TotalAmount,
-		Transactions: createdList,
+		AsOfDate:       preview.AsOfDate,
+		Month:          preview.Month,
+		Created:        int64(len(createdList)),
+		TotalAmount:    preview.TotalAmount,
+		Transactions:   createdList,
+		RolloverOffers: offers,
 	}, nil
 }

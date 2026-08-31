@@ -5,17 +5,31 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
 )
 
 const categoryColumns = `id, name, active, created_at, updated_at`
 
 type categoryAmounts struct {
-	name     string
-	budget   int64
-	spending int64
+	name               string
+	baseBudget         int64
+	rolloverAdjustment int64
+	budget             int64
+	spending           int64
+	transactionCount   int64
+	sinkingFund        bool
+	sinkingFundOpening int64
+}
+
+type budgetTotals struct {
+	baseBudget         int64
+	rolloverAdjustment int64
+	totalBudget        int64
+	sinkingFundOpening int64
 }
 
 func budgetMonthExists(ctx context.Context, tx *sql.Tx, month string) (bool, error) {
@@ -123,7 +137,7 @@ func scanCategory(row interface{ Scan(dest ...any) error }) (contract.Category, 
 	return category, err
 }
 
-func loadMonthBudgets(ctx context.Context, tx *sql.Tx, month string) (map[int64]*categoryAmounts, int64, error) {
+func loadMonthBudgets(ctx context.Context, tx *sql.Tx, month string) (map[int64]*categoryAmounts, budgetTotals, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT b.category_id, c.name, b.amount_hundredths
 		FROM budgets AS b
@@ -131,33 +145,120 @@ func loadMonthBudgets(ctx context.Context, tx *sql.Tx, month string) (map[int64]
 		WHERE b.month = ?
 	`, month)
 	if err != nil {
-		return nil, 0, err
+		return nil, budgetTotals{}, err
 	}
 	defer func() { _ = rows.Close() }()
 
 	amounts := make(map[int64]*categoryAmounts)
-	var total int64
+	var totals budgetTotals
 	for rows.Next() {
 		var id int64
 		var name string
 		var amount int64
 		if err := rows.Scan(&id, &name, &amount); err != nil {
-			return nil, 0, err
+			return nil, budgetTotals{}, err
 		}
-		next, ok := checkedAdd(total, amount)
+		next, ok := checkedAdd(totals.baseBudget, amount)
 		if !ok {
-			return nil, 0, fmtOverflow("budget")
+			return nil, budgetTotals{}, fmtOverflow("budget")
 		}
-		total = next
-		amounts[id] = &categoryAmounts{name: name, budget: amount}
+		totals.baseBudget = next
+		amounts[id] = &categoryAmounts{name: name, baseBudget: amount, budget: amount}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, err
+		return nil, budgetTotals{}, err
 	}
 	if err := rows.Close(); err != nil {
-		return nil, 0, err
+		return nil, budgetTotals{}, err
 	}
-	return amounts, total, nil
+
+	rolloverRows, err := tx.QueryContext(ctx, `
+		SELECT r.category_id, c.name, r.amount_hundredths
+		FROM budget_rollovers AS r
+		INNER JOIN categories AS c ON c.id = r.category_id
+		WHERE r.target_month = ?
+		ORDER BY c.name COLLATE NOCASE ASC, r.category_id ASC, r.id ASC
+	`, month)
+	if err != nil {
+		return nil, budgetTotals{}, err
+	}
+	for rolloverRows.Next() {
+		var id, amount int64
+		var name string
+		if err := rolloverRows.Scan(&id, &name, &amount); err != nil {
+			_ = rolloverRows.Close()
+			return nil, budgetTotals{}, err
+		}
+		row, exists := amounts[id]
+		if !exists {
+			row = &categoryAmounts{name: name}
+			amounts[id] = row
+		}
+		if amount < 0 {
+			_ = rolloverRows.Close()
+			return nil, budgetTotals{}, fmtOverflow("rollover adjustment")
+		}
+		adjustment, ok := checkedSubtract(row.rolloverAdjustment, amount)
+		if !ok {
+			_ = rolloverRows.Close()
+			return nil, budgetTotals{}, fmtOverflow("rollover adjustment")
+		}
+		row.rolloverAdjustment = adjustment
+		totals.rolloverAdjustment, ok = checkedSubtract(totals.rolloverAdjustment, amount)
+		if !ok {
+			_ = rolloverRows.Close()
+			return nil, budgetTotals{}, fmtOverflow("rollover adjustment")
+		}
+	}
+	if err := rolloverRows.Err(); err != nil {
+		_ = rolloverRows.Close()
+		return nil, budgetTotals{}, err
+	}
+	if err := rolloverRows.Close(); err != nil {
+		return nil, budgetTotals{}, err
+	}
+	for _, row := range amounts {
+		effective, ok := checkedAddSigned(row.baseBudget, row.rolloverAdjustment)
+		if !ok {
+			return nil, budgetTotals{}, fmtOverflow("budget")
+		}
+		row.budget = effective
+	}
+	var ok bool
+	totals.totalBudget, ok = checkedAddSigned(totals.baseBudget, totals.rolloverAdjustment)
+	if !ok {
+		return nil, budgetTotals{}, fmtOverflow("budget")
+	}
+	funds, err := sinkingfund.BalancesForMonth(ctx, tx, month)
+	if err != nil {
+		return nil, budgetTotals{}, err
+	}
+	for id, fund := range funds {
+		row := amounts[id]
+		if row == nil {
+			row = &categoryAmounts{}
+			amounts[id] = row
+		}
+		row.name = fund.Period.Category
+		row.sinkingFund = true
+		row.sinkingFundOpening = fund.OpeningBalance
+		row.baseBudget = fund.BaseContribution
+		row.budget = fund.AvailableBalance
+		totals.sinkingFundOpening, ok = checkedAddSigned(totals.sinkingFundOpening, fund.OpeningBalance)
+		if !ok {
+			return nil, budgetTotals{}, fmtOverflow("sinking fund opening balance")
+		}
+	}
+	// Recompute effective totals after replacing fund rows; base totals remain
+	// the sum of stored monthly contributions only.
+	totals.totalBudget = 0
+	for _, row := range amounts {
+		totals.totalBudget, ok = checkedAddSigned(totals.totalBudget, row.budget)
+		if !ok {
+			return nil, budgetTotals{}, fmtOverflow("budget")
+		}
+	}
+	return amounts, totals, nil
 }
 
 func addMonthSpending(ctx context.Context, tx *sql.Tx, startDate, endDate string, amounts map[int64]*categoryAmounts) (int64, error) {
@@ -204,6 +305,16 @@ func addMonthSpending(ctx context.Context, tx *sql.Tx, startDate, endDate string
 		return 0, err
 	}
 	return total, nil
+}
+
+func checkedAddSigned(left, right int64) (int64, bool) {
+	if right > 0 && left > math.MaxInt64-right {
+		return 0, false
+	}
+	if right < 0 && left < math.MinInt64-right {
+		return 0, false
+	}
+	return left + right, true
 }
 
 func orderCategoryIDs(ctx context.Context, tx *sql.Tx, ids []int64) ([]int64, error) {

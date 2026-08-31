@@ -34,12 +34,12 @@ func TestMonthlyBudgetedAndSpentCategories(t *testing.T) {
 		t.Fatalf("categories = %#v, want Dining then Groceries", result.Categories)
 	}
 	if !reflect.DeepEqual(result.Categories[0], contract.MonthlySummaryCategory{
-		CategoryID: dining.ID, Category: "Dining", Budget: "150.00", Spending: "30.00", Remaining: "120.00", SpentOfBudget: stringPtr("20.00"),
+		CategoryID: dining.ID, Category: "Dining", BaseBudget: "150.00", SinkingFund: false, SinkingFundOpening: "0.00", RolloverAdjustment: "0.00", Budget: "150.00", Spending: "30.00", Remaining: "120.00", SpentOfBudget: stringPtr("20.00"), ShareOfBaseBudget: stringPtr("23.07"), ShareOfSpending: stringPtr("25.00"),
 	}) {
 		t.Fatalf("Dining row = %#v", result.Categories[0])
 	}
 	if !reflect.DeepEqual(result.Categories[1], contract.MonthlySummaryCategory{
-		CategoryID: groceries.ID, Category: "Groceries", Budget: "500.00", Spending: "90.00", Remaining: "410.00", SpentOfBudget: stringPtr("18.00"),
+		CategoryID: groceries.ID, Category: "Groceries", BaseBudget: "500.00", SinkingFund: false, SinkingFundOpening: "0.00", RolloverAdjustment: "0.00", Budget: "500.00", Spending: "90.00", Remaining: "410.00", SpentOfBudget: stringPtr("18.00"), ShareOfBaseBudget: stringPtr("76.92"), ShareOfSpending: stringPtr("75.00"),
 	}) {
 		t.Fatalf("Groceries row = %#v", result.Categories[1])
 	}

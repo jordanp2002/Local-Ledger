@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -89,6 +89,25 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if countNonConstraintIndexes(indexes["transaction_idempotency"]) != 0 {
 		t.Fatalf("transaction_idempotency has a speculative non-constraint index: %v", indexes["transaction_idempotency"])
 	}
+	if countNonConstraintIndexes(indexes["budget_rollovers"]) != 2 {
+		t.Fatalf("budget_rollovers non-constraint index count = %d, want 2", countNonConstraintIndexes(indexes["budget_rollovers"]))
+	}
+	if !hasIndexSignature(indexes["budget_rollovers"], schemaIndexColumn{name: "source_month"}, schemaIndexColumn{name: "category_id"}) ||
+		!hasIndexSignature(indexes["budget_rollovers"], schemaIndexColumn{name: "target_month"}, schemaIndexColumn{name: "category_id"}) {
+		t.Fatalf("budget_rollovers indexes = %v, want source/category and target/category", indexes["budget_rollovers"])
+	}
+	if countNonConstraintIndexes(indexes["sinking_fund_periods"]) != 1 {
+		t.Fatalf("sinking_fund_periods non-constraint index count = %d, want 1", countNonConstraintIndexes(indexes["sinking_fund_periods"]))
+	}
+	hasOpenPeriodIndex := false
+	for _, index := range indexes["sinking_fund_periods"] {
+		if index.unique && index.partial && len(index.columns) == 1 && index.columns[0].name == "category_id" {
+			hasOpenPeriodIndex = true
+		}
+	}
+	if !hasOpenPeriodIndex {
+		t.Fatalf("sinking_fund_periods indexes = %v, want partial unique open-period index", indexes["sinking_fund_periods"])
+	}
 	for _, index := range indexes["categories"] {
 		if indexHasColumn(index, "active") {
 			t.Fatalf("categories has a separate active-category index: %q", index.name)
@@ -101,12 +120,14 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	}
 
 	wantForeignKeys := map[string]bool{
+		"budget_rollovers":           true,
 		"categories":                 false,
 		"budgets":                    true,
 		"transactions":               false,
 		"known_merchants":            true,
 		"recurring_transactions":     true,
 		"recurring_transaction_runs": true,
+		"sinking_fund_periods":       true,
 		"transaction_allocations":    true,
 		"transaction_imports":        false,
 		"transaction_import_items":   true,
@@ -131,6 +152,12 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		}
 		if table == "transaction_allocations" {
 			assertAllocationForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "budget_rollovers" {
+			if len(foreignKeys) != 2 {
+				t.Fatalf("budget_rollovers foreign keys = %v, want exactly two", foreignKeys)
+			}
 			continue
 		}
 		if !wantForeignKeys[table] {
@@ -328,8 +355,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 5 {
-		t.Fatalf("reopened user_version = %d, want 5", version)
+	if version != 7 {
+		t.Fatalf("reopened user_version = %d, want 7", version)
 	}
 
 	var categoryName string

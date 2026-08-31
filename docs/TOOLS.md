@@ -44,7 +44,31 @@
 | `get_spending_summary` | Total spending for a date range. |
 | `list_top_merchants` | Rank merchants by spending. |
 | `compare_months` | Compare two budgeted months. |
-| `get_monthly_series` | Review up to 24 months in order. |
+| `get_monthly_series` | Review up to 24 months in order, optionally with one consistently ordered category row per month. |
+
+## 6. Explicit budget rollovers
+
+| Tool | Use |
+| --- | --- |
+| `create_budget_rollover` | Explicitly charge eligible overspending from a category to the immediately following month. |
+| `list_budget_rollovers` | Audit rollover sources, amounts, status, and optional transaction links. |
+| `remove_budget_rollover` | Remove one rollover after checking that later dependent rollovers are handled first. |
+
+## 7. Sinking funds
+
+| Tool | Use |
+| --- | --- |
+| `enable_sinking_fund` | Start carrying a category's unused balance from the current month. |
+| `disable_sinking_fund` | End the current fund period and explicitly release its balance. |
+| `list_sinking_funds` | Review current fund balances, optionally including completed periods. |
+
+Transaction writes never create rollovers automatically. When `add_transaction`,
+`add_split_transaction`, `add_transactions`, `update_transaction`, or
+`materialize_due_transactions` returns a non-empty `rollover_offers` array,
+show the offer to the user and ask whether to call `create_budget_rollover`.
+The create tool rechecks eligibility atomically, and the target month is always
+the immediate next calendar month. Rollover adjustments are shown separately
+from base budgets in monthly, category, comparison, and series reports.
 
 ## Recurring-expense flow
 
@@ -52,6 +76,8 @@
 2. Call `preview_due_transactions` to see what is due. Preview does not write anything.
 3. Show the preview to the user and ask them to confirm it.
 4. After confirmation, call `materialize_due_transactions` to record the due expenses.
+5. If materialization returns a `rollover_offers` entry, show it and ask whether
+   to create the explicit rollover.
 
 Local Ledger does not run continuously and has no internal scheduler. Recurring
 expenses are checked only when an MCP client calls the preview or materialization

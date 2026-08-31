@@ -33,6 +33,10 @@ func TestGetMonthlySeriesToolSchemaAndAnnotations(t *testing.T) {
 			t.Fatalf("%s schema = %#v, want string", field, properties[field])
 		}
 	}
+	includeCategories, _ := properties["include_categories"].(map[string]any)
+	if includeCategories == nil || !schemaTypeContains(includeCategories["type"], "boolean") {
+		t.Fatalf("include_categories schema = %#v, want boolean", properties["include_categories"])
+	}
 	if containsValue(required, "category") {
 		t.Fatal("category is required, want optional")
 	}
@@ -81,7 +85,7 @@ func TestGetMonthlySeriesSuccessContiguousNullsAndNoWrite(t *testing.T) {
 		t.Fatalf("get_monthly_series failed: %s", structuredJSON(t, result))
 	}
 	got := structuredObject(t, result)
-	if keys := objectKeys(got); strings.Join(keys, ",") != "category,from_month,months,ok,to_month" {
+	if keys := objectKeys(got); strings.Join(keys, ",") != "category,from_month,include_categories,months,ok,to_month" {
 		t.Fatalf("keys = %v", keys)
 	}
 	if got["ok"] != true || got["from_month"] != "2026-01" || got["to_month"] != "2026-04" || got["category"] != nil {

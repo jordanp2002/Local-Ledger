@@ -6,6 +6,8 @@ import (
 	"errors"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
+	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
 )
 
 func (s *Store) Disable(ctx context.Context, name string) (contract.Category, bool, *contract.Budget, error) {
@@ -40,6 +42,11 @@ func (s *Store) Disable(ctx context.Context, name string) (contract.Category, bo
 	}
 
 	month := LocalMonth(s.now())
+	if open, err := sinkingfund.HasOpenPeriod(ctx, tx, current.ID); err != nil {
+		return contract.Category{}, false, nil, err
+	} else if open {
+		return contract.Category{}, false, nil, sinkingfund.ErrActive
+	}
 	removed, err := loadCurrentMonthBudget(ctx, tx, current.ID, month)
 	if err != nil {
 		return contract.Category{}, false, nil, err
@@ -65,6 +72,9 @@ func (s *Store) Disable(ctx context.Context, name string) (contract.Category, bo
 
 	disabled, err := getCategoryByID(ctx, tx, current.ID)
 	if err != nil {
+		return contract.Category{}, false, nil, err
+	}
+	if err := rollover.ValidateOutgoing(ctx, tx); err != nil {
 		return contract.Category{}, false, nil, err
 	}
 	if err := tx.Commit(); err != nil {

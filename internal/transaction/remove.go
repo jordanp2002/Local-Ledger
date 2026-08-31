@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 )
 
 func (s *Store) Remove(ctx context.Context, id int64) (contract.Transaction, []contract.FieldIssue, error) {
@@ -54,6 +55,9 @@ func (s *Store) remove(ctx context.Context, id int64) (contract.Transaction, []c
 	}
 	if affected != 1 {
 		return contract.Transaction{}, nil, fmt.Errorf("deleted %d transactions, want 1", affected)
+	}
+	if err := rollover.ValidateOutgoing(ctx, tx); err != nil {
+		return contract.Transaction{}, nil, err
 	}
 
 	if err := tx.Commit(); err != nil {

@@ -18,6 +18,45 @@ type Budget struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
+// BudgetRollover is one explicit one-month budget adjustment.
+type BudgetRollover struct {
+	ID                  int64   `json:"id"`
+	CategoryID          int64   `json:"category_id"`
+	Category            string  `json:"category"`
+	SourceMonth         string  `json:"source_month"`
+	TargetMonth         string  `json:"target_month"`
+	Amount              string  `json:"amount"`
+	SourceTransactionID *int64  `json:"source_transaction_id"`
+	Note                *string `json:"note"`
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
+	Status              string  `json:"status"`
+}
+
+type SinkingFundPeriod struct {
+	ID             int64   `json:"id"`
+	CategoryID     int64   `json:"category_id"`
+	Category       string  `json:"category"`
+	CategoryActive bool    `json:"category_active"`
+	StartMonth     string  `json:"start_month"`
+	EndMonth       *string `json:"end_month"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+}
+
+// RolloverOffer is a non-mutating prompt that can follow a transaction write.
+type RolloverOffer struct {
+	SourceMonth         string `json:"source_month"`
+	TargetMonth         string `json:"target_month"`
+	CategoryID          int64  `json:"category_id"`
+	Category            string `json:"category"`
+	SourceTransactionID *int64 `json:"source_transaction_id"`
+	BaseBudget          string `json:"base_budget"`
+	AvailableBudget     string `json:"available_budget"`
+	SpendingAfter       string `json:"spending_after"`
+	EligibleRollover    string `json:"eligible_rollover"`
+}
+
 type TransactionAllocation struct {
 	CategoryID int64  `json:"category_id"`
 	Category   string `json:"category"`
@@ -56,47 +95,93 @@ type Page struct {
 }
 
 type MonthlySummaryCategory struct {
-	CategoryID    int64   `json:"category_id"`
-	Category      string  `json:"category"`
-	Budget        string  `json:"budget"`
-	Spending      string  `json:"spending"`
-	Remaining     string  `json:"remaining"`
-	SpentOfBudget *string `json:"spent_of_budget"`
+	CategoryID         int64   `json:"category_id"`
+	Category           string  `json:"category"`
+	BaseBudget         string  `json:"base_budget"`
+	SinkingFund        bool    `json:"sinking_fund"`
+	SinkingFundOpening string  `json:"sinking_fund_opening_balance"`
+	RolloverAdjustment string  `json:"rollover_adjustment"`
+	Budget             string  `json:"budget"`
+	Spending           string  `json:"spending"`
+	Remaining          string  `json:"remaining"`
+	SpentOfBudget      *string `json:"spent_of_budget"`
+	ShareOfBaseBudget  *string `json:"share_of_base_budget"`
+	ShareOfSpending    *string `json:"share_of_spending"`
+}
+
+// MonthlySeriesCategory is one category cell in a category-by-month series.
+// Budget-dependent fields are nullable when the month has no budget snapshot;
+// spending facts remain available in that case.
+type MonthlySeriesCategory struct {
+	CategoryID         int64   `json:"category_id"`
+	Category           string  `json:"category"`
+	BaseBudget         *string `json:"base_budget"`
+	RolloverAdjustment *string `json:"rollover_adjustment"`
+	SinkingFund        bool    `json:"sinking_fund"`
+	SinkingFundOpening *string `json:"sinking_fund_opening_balance"`
+	Budget             *string `json:"budget"`
+	Spending           string  `json:"spending"`
+	Remaining          *string `json:"remaining"`
+	SpentOfBudget      *string `json:"spent_of_budget"`
+	ShareOfBaseBudget  *string `json:"share_of_base_budget"`
+	ShareOfSpending    *string `json:"share_of_spending"`
+	TransactionCount   int64   `json:"transaction_count"`
 }
 
 type CategorySummary struct {
-	CategoryID       int64   `json:"category_id"`
-	Category         string  `json:"category"`
-	Month            string  `json:"month"`
-	Budget           string  `json:"budget"`
-	TotalSpending    string  `json:"total_spending"`
-	Remaining        string  `json:"remaining"`
-	SpentOfBudget    *string `json:"spent_of_budget"`
-	TransactionCount int64   `json:"transaction_count"`
+	CategoryID         int64   `json:"category_id"`
+	Category           string  `json:"category"`
+	Month              string  `json:"month"`
+	BaseBudget         string  `json:"base_budget"`
+	SinkingFund        bool    `json:"sinking_fund"`
+	SinkingFundOpening string  `json:"sinking_fund_opening_balance"`
+	RolloverAdjustment string  `json:"rollover_adjustment"`
+	Budget             string  `json:"budget"`
+	TotalSpending      string  `json:"total_spending"`
+	Remaining          string  `json:"remaining"`
+	SpentOfBudget      *string `json:"spent_of_budget"`
+	TransactionCount   int64   `json:"transaction_count"`
 }
 
 type ComparisonMonth struct {
-	Month         string `json:"month"`
-	TotalBudget   string `json:"total_budget"`
-	TotalSpending string `json:"total_spending"`
-	Remaining     string `json:"remaining"`
+	Month                   string `json:"month"`
+	TotalBaseBudget         string `json:"total_base_budget"`
+	TotalSinkingFundOpening string `json:"total_sinking_fund_opening_balance"`
+	TotalRolloverAdjustment string `json:"total_rollover_adjustment"`
+	TotalBudget             string `json:"total_budget"`
+	TotalSpending           string `json:"total_spending"`
+	Remaining               string `json:"remaining"`
 }
 
 type ComparisonChange struct {
-	TotalBudget   string `json:"total_budget"`
-	TotalSpending string `json:"total_spending"`
-	Remaining     string `json:"remaining"`
+	TotalBaseBudget         string `json:"total_base_budget"`
+	TotalSinkingFundOpening string `json:"total_sinking_fund_opening_balance"`
+	TotalRolloverAdjustment string `json:"total_rollover_adjustment"`
+	TotalBudget             string `json:"total_budget"`
+	TotalSpending           string `json:"total_spending"`
+	Remaining               string `json:"remaining"`
 }
 
 type ComparisonCategory struct {
-	CategoryID     int64  `json:"category_id"`
-	Category       string `json:"category"`
-	FromBudget     string `json:"from_budget"`
-	ToBudget       string `json:"to_budget"`
-	BudgetChange   string `json:"budget_change"`
-	FromSpending   string `json:"from_spending"`
-	ToSpending     string `json:"to_spending"`
-	SpendingChange string `json:"spending_change"`
+	CategoryID               int64  `json:"category_id"`
+	Category                 string `json:"category"`
+	FromBaseBudget           string `json:"from_base_budget"`
+	ToBaseBudget             string `json:"to_base_budget"`
+	BaseBudgetChange         string `json:"base_budget_change"`
+	FromSinkingFundOpening   string `json:"from_sinking_fund_opening_balance"`
+	ToSinkingFundOpening     string `json:"to_sinking_fund_opening_balance"`
+	SinkingFundOpeningChange string `json:"sinking_fund_opening_balance_change"`
+	FromSinkingFund          bool   `json:"from_sinking_fund"`
+	ToSinkingFund            bool   `json:"to_sinking_fund"`
+	FromRolloverAdjustment   string `json:"from_rollover_adjustment"`
+	ToRolloverAdjustment     string `json:"to_rollover_adjustment"`
+	RolloverAdjustmentChange string `json:"rollover_adjustment_change"`
+	FromBudget               string `json:"from_budget"`
+	ToBudget                 string `json:"to_budget"`
+	BudgetChange             string `json:"budget_change"`
+	FromSpending             string `json:"from_spending"`
+	ToSpending               string `json:"to_spending"`
+	SpendingChange           string `json:"spending_change"`
 }
 
 type SpendingSummaryCategory struct {

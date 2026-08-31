@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 )
 
 type canonicalSplit struct {
@@ -30,6 +31,10 @@ func (s *Store) addSplit(ctx context.Context, in validatedSplit) (AddResult, []c
 		return AddResult{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	before, err := rollover.Snapshot(ctx, tx)
+	if err != nil {
+		return AddResult{}, nil, err
+	}
 
 	allocations, err := resolveSplitAllocations(ctx, tx, in.allocations)
 	if err != nil {
@@ -90,6 +95,10 @@ func (s *Store) addSplit(ctx context.Context, in validatedSplit) (AddResult, []c
 			return AddResult{}, nil, err
 		}
 	}
+	offers, err := rollover.BuildOffers(ctx, tx, before, transactionOfferChanges(recorded))
+	if err != nil {
+		return AddResult{}, nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return AddResult{}, nil, err
 	}
@@ -97,6 +106,7 @@ func (s *Store) addSplit(ctx context.Context, in validatedSplit) (AddResult, []c
 		Transaction:           recorded,
 		CategorySource:        CategorySourceProvided,
 		MerchantMappingAction: MappingActionPreserved,
+		RolloverOffers:        offers,
 	}, nil, nil
 }
 

@@ -80,12 +80,13 @@ type previewDueTransactionsOutput struct {
 type materializeDueTransactionsInput struct{}
 
 type materializeDueTransactionsOutput struct {
-	OK           bool                   `json:"ok"`
-	AsOfDate     string                 `json:"as_of_date"`
-	Month        string                 `json:"month"`
-	Created      int64                  `json:"created"`
-	TotalAmount  string                 `json:"total_amount"`
-	Transactions []contract.Transaction `json:"transactions"`
+	OK             bool                     `json:"ok"`
+	AsOfDate       string                   `json:"as_of_date"`
+	Month          string                   `json:"month"`
+	Created        int64                    `json:"created"`
+	TotalAmount    string                   `json:"total_amount"`
+	Transactions   []contract.Transaction   `json:"transactions"`
+	RolloverOffers []contract.RolloverOffer `json:"rollover_offers"`
 }
 
 type previewUpcomingTransactionsInput struct{}
@@ -151,7 +152,7 @@ func registerRecurringTools(srv *mcp.Server, store recurring.Service, logger *lo
 
 	mcp.AddTool[materializeDueTransactionsInput, any](srv, &mcp.Tool{
 		Name:        "materialize_due_transactions",
-		Description: "After user confirmation, atomically create ordinary expense transactions for the current due set; retries are safe and create no duplicates.",
+		Description: "After user confirmation, atomically create ordinary expense transactions for the current due set; retries are safe and create no duplicates. If rollover_offers is returned, show the offer and ask whether to create the explicit one-month rollover.",
 		Annotations: writableToolAnnotations(true, true),
 	}, tools.materializeDueTransactions)
 }
@@ -295,12 +296,13 @@ func (t *recurringTools) materializeDueTransactions(ctx context.Context, _ *mcp.
 	}
 
 	return toolOK(materializeDueTransactionsOutput{
-		OK:           true,
-		AsOfDate:     res.AsOfDate,
-		Month:        res.Month,
-		Created:      res.Created,
-		TotalAmount:  res.TotalAmount,
-		Transactions: res.Transactions,
+		OK:             true,
+		AsOfDate:       res.AsOfDate,
+		Month:          res.Month,
+		Created:        res.Created,
+		TotalAmount:    res.TotalAmount,
+		Transactions:   res.Transactions,
+		RolloverOffers: nonNilRolloverOffers(res.RolloverOffers),
 	})
 }
 

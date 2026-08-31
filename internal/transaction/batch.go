@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 )
 
 const MaxBatchTransactions = 100
@@ -32,6 +33,7 @@ type AddBatchResult struct {
 	IdempotentReplay bool
 	Transactions     []AddResult
 	TotalHundredths  int64
+	RolloverOffers   []contract.RolloverOffer
 }
 
 type BatchRowError struct {
@@ -108,6 +110,10 @@ func (s *Store) addBatch(ctx context.Context, in validatedBatch) (AddBatchResult
 		return AddBatchResult{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	before, err := rollover.Snapshot(ctx, tx)
+	if err != nil {
+		return AddBatchResult{}, nil, err
+	}
 
 	result, err := addBatchInTx(ctx, tx, in)
 	if isUniqueConstraintOn(err, "transaction_imports") {
@@ -121,6 +127,15 @@ func (s *Store) addBatch(ctx context.Context, in validatedBatch) (AddBatchResult
 	if err != nil {
 		return AddBatchResult{}, nil, err
 	}
+	changes := make([]rollover.OfferChange, 0)
+	for _, item := range result.Transactions {
+		changes = append(changes, transactionOfferChanges(item.Transaction)...)
+	}
+	offers, err := rollover.BuildOffers(ctx, tx, before, changes)
+	if err != nil {
+		return AddBatchResult{}, nil, err
+	}
+	result.RolloverOffers = offers
 	if err := tx.Commit(); err != nil {
 		return AddBatchResult{}, nil, err
 	}
@@ -240,6 +255,7 @@ func replayImportRecord(ctx context.Context, q rowQueryer, key, fingerprint stri
 			Transaction:           recorded,
 			CategorySource:        item.categorySource,
 			MerchantMappingAction: item.mappingAction,
+			RolloverOffers:        []contract.RolloverOffer{},
 		})
 	}
 
@@ -248,6 +264,7 @@ func replayImportRecord(ctx context.Context, q rowQueryer, key, fingerprint stri
 		IdempotentReplay: true,
 		Transactions:     results,
 		TotalHundredths:  total,
+		RolloverOffers:   []contract.RolloverOffer{},
 	}, nil
 }
 

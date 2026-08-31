@@ -51,3 +51,20 @@ func MonthDateRange(month string) (string, string, error) {
 	end := start.AddDate(0, 1, -1)
 	return start.Format(dateLayout), end.Format(dateLayout), nil
 }
+
+// NextMonth returns the canonical calendar month immediately after month.
+func NextMonth(month string) (string, error) {
+	parsed, err := ParseMonth(month)
+	if err != nil {
+		return "", err
+	}
+	value, err := time.Parse(monthLayout, parsed)
+	if err != nil {
+		return "", fmt.Errorf("invalid month %q: %w", month, err)
+	}
+	next := value.AddDate(0, 1, 0).Format(monthLayout)
+	if _, err := ParseMonth(next); err != nil {
+		return "", fmt.Errorf("month %q has no representable next month: %w", month, err)
+	}
+	return next, nil
+}

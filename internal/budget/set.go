@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 )
 
 var (
@@ -138,6 +139,9 @@ func (s *Store) Set(ctx context.Context, month string, allocations []Allocation)
 		`, operation.amount, operation.categoryID, month); err != nil {
 			return SetResult{}, nil, err
 		}
+	}
+	if err := rollover.ValidateOutgoing(ctx, tx); err != nil {
+		return SetResult{}, nil, err
 	}
 
 	categoryIDs := make([]int64, 0, len(operations))

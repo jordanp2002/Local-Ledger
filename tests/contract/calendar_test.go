@@ -159,3 +159,34 @@ func TestCalendarParsingDoesNotApplyCurrentTimeRules(t *testing.T) {
 		t.Fatalf("ParseMonth(future month) = (%q, %v), want canonical future month accepted", got, err)
 	}
 }
+
+func TestNextMonthReturnsImmediateCanonicalMonth(t *testing.T) {
+	tests := map[string]string{
+		"2026-01": "2026-02",
+		"2026-02": "2026-03",
+		"2026-11": "2026-12",
+		"2026-12": "2027-01",
+		"2024-02": "2024-03",
+	}
+	for month, want := range tests {
+		t.Run(month, func(t *testing.T) {
+			got, err := contract.NextMonth(month)
+			if err != nil {
+				t.Fatalf("NextMonth(%q) error = %v", month, err)
+			}
+			if got != want {
+				t.Fatalf("NextMonth(%q) = %q, want %q", month, got, want)
+			}
+		})
+	}
+}
+
+func TestNextMonthRejectsInvalidAndUnrepresentableMonths(t *testing.T) {
+	for _, month := range []string{"", "2026-1", "2026-13", "9999-12"} {
+		t.Run(month, func(t *testing.T) {
+			if got, err := contract.NextMonth(month); err == nil || got != "" {
+				t.Fatalf("NextMonth(%q) = (%q, %v), want an error and empty result", month, got, err)
+			}
+		})
+	}
+}
