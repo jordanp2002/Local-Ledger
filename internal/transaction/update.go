@@ -124,8 +124,8 @@ func validateUpdate(in UpdateInput, now time.Time) (validatedUpdate, []contract.
 		if in.Category != nil || in.CategoryNull {
 			fields = append(fields, contract.FieldIssue{Field: "category", Reason: "cannot be supplied with allocations"})
 		}
-		if len(*in.Allocations) == 0 {
-			fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "must contain at least one item"})
+		if len(*in.Allocations) < 2 {
+			fields = append(fields, contract.FieldIssue{Field: "allocations", Reason: "must contain at least two items"})
 		} else {
 			validated.allocations = in.Allocations
 			var total int64

@@ -1,6 +1,10 @@
 package server_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+)
 
 func TestSinkingFundLifecycleIsIdempotent(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), fixedBudgetNow, nil)
@@ -28,5 +32,9 @@ func TestSinkingFundLifecycleIsIdempotent(t *testing.T) {
 	repeatedDisable := callTool(t, session, "disable_sinking_fund", map[string]any{"category": "Car Repairs"})
 	if repeatedDisable.IsError || structuredObject(t, repeatedDisable)["changed"] != false || structuredObject(t, repeatedDisable)["released_balance"] != "100.00" {
 		t.Fatalf("repeat disable: %s", structuredJSON(t, repeatedDisable))
+	}
+	reenabled := callTool(t, session, "enable_sinking_fund", map[string]any{"category": "Car Repairs"})
+	if !reenabled.IsError || objectField(t, structuredObject(t, reenabled), "error")["code"] != string(contract.ErrorCodeSinkingFundActive) {
+		t.Fatalf("same-month re-enable: %s", structuredJSON(t, reenabled))
 	}
 }

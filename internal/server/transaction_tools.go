@@ -415,6 +415,21 @@ func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.Cal
 		)))
 	}
 
+	var overflow *rollover.OverflowError
+	if errors.As(err, &overflow) {
+		field := "amount"
+		switch tool {
+		case "add_split_transaction":
+			field = "allocations"
+		case "add_transactions":
+			field = "transactions"
+		}
+		return toolError(invalidTransactionInputEnvelope([]contract.FieldIssue{{
+			Field:  field,
+			Reason: "would make category spending exceed the supported amount range",
+		}}))
+	}
+
 	var dependency *rollover.DependencyConflictError
 	if errors.As(err, &dependency) {
 		return toolError(dependencyConflictEnvelope(dependency))

@@ -210,7 +210,7 @@ func (s *Store) PreviewUpcoming(ctx context.Context) (PreviewUpcomingResult, err
 	blocked := make([]contract.BlockedDueTransaction, 0)
 	var totalHundredths int64
 	for _, item := range schedule.items {
-		if !item.categoryActive {
+		if !item.categoryActive && item.due {
 			blocked = append(blocked, contract.BlockedDueTransaction{
 				RecurringTransactionID: item.id,
 				Merchant:               item.merchant,

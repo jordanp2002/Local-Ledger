@@ -144,7 +144,7 @@ func (s *Store) Enable(ctx context.Context, in EnableInput) (EnableResult, []con
 	if !cat.Active {
 		return EnableResult{}, nil, &CategoryInactiveError{Category: *cat}
 	}
-	period, found, err := findPeriodAt(ctx, tx, cat.ID, month, true)
+	period, found, err := findPeriodAt(ctx, tx, cat.ID, month, false)
 	if err != nil {
 		return EnableResult{}, nil, err
 	}

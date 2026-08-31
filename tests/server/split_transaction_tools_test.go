@@ -72,3 +72,28 @@ func TestUpdateSplitTransactionToolRejectsLegacyAmount(t *testing.T) {
 		map[string]any{"id": id},
 	)))
 }
+
+func TestUpdateSplitTransactionToolRejectsOneAllocation(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+	createCategoryForMerchantTest(t, session, "Groceries")
+	createCategoryForMerchantTest(t, session, "Household")
+	added := callTool(t, session, "add_split_transaction", map[string]any{
+		"merchant": "Costco",
+		"allocations": []map[string]any{
+			{"category": "Groceries", "amount": "65.00"},
+			{"category": "Household", "amount": "20.00"},
+		},
+	})
+	id := decodeTransaction(t, structuredObject(t, added)["transaction"]).ID
+	result := callTool(t, session, "update_transaction", map[string]any{
+		"id":          id,
+		"allocations": []map[string]any{{"category": "Groceries", "amount": "85.00"}},
+	})
+	if !result.IsError {
+		t.Fatalf("one-allocation update succeeded: %s", structuredJSON(t, result))
+	}
+	errorPayload := objectField(t, structuredObject(t, result), "error")
+	if errorPayload["code"] != string(contract.ErrorCodeInvalidInput) {
+		t.Fatalf("one-allocation update error: %s", structuredJSON(t, result))
+	}
+}

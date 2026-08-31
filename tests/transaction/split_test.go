@@ -194,16 +194,16 @@ func TestUpdateSplitAllocationsReplacesAtomicallyAndRejectsLegacyPatch(t *testin
 	})
 
 	single := []transaction.AllocationInput{{Category: "Pharmacy", Amount: "85.00"}}
-	updated := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: split.ID, Allocations: &single})
-	if updated.Transaction.Amount != "85.00" || transactionCategory(updated.Transaction) != "Pharmacy" || len(updated.Transaction.Allocations) != 1 {
-		t.Fatalf("split-to-single = %#v", updated.Transaction)
+	_, fields, err := store.Update(ctx, transaction.UpdateInput{ID: split.ID, Allocations: &single})
+	if err != nil || len(fields) != 1 || fields[0] != (contract.FieldIssue{Field: "allocations", Reason: "must contain at least two items"}) {
+		t.Fatalf("single allocation fields %#v error %v", fields, err)
 	}
 
 	multi := []transaction.AllocationInput{
 		{Category: "Household", Amount: "25.00"},
 		{Category: "Groceries", Amount: "60.00"},
 	}
-	updated = mustUpdate(t, ctx, store, transaction.UpdateInput{ID: split.ID, Allocations: &multi, Merchant: stringPtr("Costco Wholesale")})
+	updated := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: split.ID, Allocations: &multi, Merchant: stringPtr("Costco Wholesale")})
 	if updated.Transaction.Amount != "85.00" || updated.Transaction.Merchant != "Costco Wholesale" || updated.Transaction.Category != nil || len(updated.Transaction.Allocations) != 2 {
 		t.Fatalf("single-to-split = %#v", updated.Transaction)
 	}
@@ -211,7 +211,7 @@ func TestUpdateSplitAllocationsReplacesAtomicallyAndRejectsLegacyPatch(t *testin
 		t.Fatalf("allocation rows = %d, want 2", countRows(t, ctx, db, "SELECT count(*) FROM transaction_allocations WHERE transaction_id = ?", split.ID))
 	}
 
-	_, fields, err := store.Update(ctx, transaction.UpdateInput{ID: split.ID, Amount: stringPtr("84.00")})
+	_, fields, err = store.Update(ctx, transaction.UpdateInput{ID: split.ID, Amount: stringPtr("84.00")})
 	if len(fields) != 0 {
 		t.Fatalf("legacy split patch fields = %#v, want none", fields)
 	}

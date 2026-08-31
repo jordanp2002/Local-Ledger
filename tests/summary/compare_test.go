@@ -40,17 +40,17 @@ func TestCompareMonthsTotalsCategoriesAndCanonicalNames(t *testing.T) {
 		t.Fatalf("Compare() = %#v fields %#v error %v", result, fields, err)
 	}
 	if result.From != (contract.ComparisonMonth{
-		Month: "2026-07", TotalBaseBudget: "600.00", TotalRolloverAdjustment: "0.00", TotalBudget: "600.00", TotalSpending: "120.00", Remaining: "480.00",
+		Month: "2026-07", TotalBaseBudget: "600.00", TotalSinkingFundOpening: "0.00", TotalRolloverAdjustment: "0.00", TotalBudget: "600.00", TotalSpending: "120.00", Remaining: "480.00",
 	}) {
 		t.Fatalf("from = %#v", result.From)
 	}
 	if result.To != (contract.ComparisonMonth{
-		Month: "2026-08", TotalBaseBudget: "450.00", TotalRolloverAdjustment: "0.00", TotalBudget: "450.00", TotalSpending: "140.00", Remaining: "310.00",
+		Month: "2026-08", TotalBaseBudget: "450.00", TotalSinkingFundOpening: "0.00", TotalRolloverAdjustment: "0.00", TotalBudget: "450.00", TotalSpending: "140.00", Remaining: "310.00",
 	}) {
 		t.Fatalf("to = %#v", result.To)
 	}
 	if result.Change != (contract.ComparisonChange{
-		TotalBaseBudget: "-150.00", TotalRolloverAdjustment: "0.00", TotalBudget: "-150.00", TotalSpending: "20.00", Remaining: "-170.00",
+		TotalBaseBudget: "-150.00", TotalSinkingFundOpening: "0.00", TotalRolloverAdjustment: "0.00", TotalBudget: "-150.00", TotalSpending: "20.00", Remaining: "-170.00",
 	}) {
 		t.Fatalf("change = %#v", result.Change)
 	}
@@ -58,6 +58,7 @@ func TestCompareMonthsTotalsCategoriesAndCanonicalNames(t *testing.T) {
 		{
 			CategoryID: dining.ID, Category: "Food & Dining",
 			FromBaseBudget: "100.00", ToBaseBudget: "0.00", BaseBudgetChange: "-100.00",
+			FromSinkingFundOpening: "0.00", ToSinkingFundOpening: "0.00", SinkingFundOpeningChange: "0.00",
 			FromRolloverAdjustment: "0.00", ToRolloverAdjustment: "0.00", RolloverAdjustmentChange: "0.00",
 			FromBudget: "100.00", ToBudget: "0.00", BudgetChange: "-100.00",
 			FromSpending: "30.00", ToSpending: "0.00", SpendingChange: "-30.00",
@@ -65,6 +66,7 @@ func TestCompareMonthsTotalsCategoriesAndCanonicalNames(t *testing.T) {
 		{
 			CategoryID: groceries.ID, Category: "Groceries",
 			FromBaseBudget: "500.00", ToBaseBudget: "450.00", BaseBudgetChange: "-50.00",
+			FromSinkingFundOpening: "0.00", ToSinkingFundOpening: "0.00", SinkingFundOpeningChange: "0.00",
 			FromRolloverAdjustment: "0.00", ToRolloverAdjustment: "0.00", RolloverAdjustmentChange: "0.00",
 			FromBudget: "500.00", ToBudget: "450.00", BudgetChange: "-50.00",
 			FromSpending: "90.00", ToSpending: "120.00", SpendingChange: "30.00",
@@ -72,6 +74,7 @@ func TestCompareMonthsTotalsCategoriesAndCanonicalNames(t *testing.T) {
 		{
 			CategoryID: health.ID, Category: "Health",
 			FromBaseBudget: "0.00", ToBaseBudget: "0.00", BaseBudgetChange: "0.00",
+			FromSinkingFundOpening: "0.00", ToSinkingFundOpening: "0.00", SinkingFundOpeningChange: "0.00",
 			FromRolloverAdjustment: "0.00", ToRolloverAdjustment: "0.00", RolloverAdjustmentChange: "0.00",
 			FromBudget: "0.00", ToBudget: "0.00", BudgetChange: "0.00",
 			FromSpending: "0.00", ToSpending: "20.00", SpendingChange: "20.00",
@@ -81,6 +84,33 @@ func TestCompareMonthsTotalsCategoriesAndCanonicalNames(t *testing.T) {
 		t.Fatalf("categories = %#v, want %#v", result.Categories, wantCategories)
 	}
 	assertUnchanged(t, ctx, fx.db, before)
+}
+
+func TestCompareMonthsIncludesSinkingFundState(t *testing.T) {
+	ctx := context.Background()
+	fx := openSummaryStore(t, torontoTime(t, 2026, 8, 30, 12, 0))
+	travel := createCategory(t, ctx, fx.categories, "Travel")
+	insertBudget(t, ctx, fx.db, travel.ID, "2026-07", "100.00")
+	insertBudget(t, ctx, fx.db, travel.ID, "2026-08", "100.00")
+	addTransaction(t, ctx, fx.transactions, "20.00", "Train", "Travel", "2026-07-10")
+	if _, err := fx.db.ExecContext(ctx, `INSERT INTO sinking_fund_periods (category_id, start_month) VALUES (?, ?)`, travel.ID, "2026-07"); err != nil {
+		t.Fatalf("insert sinking fund period: %v", err)
+	}
+
+	result, fields, err := fx.summary.Compare(ctx, "2026-07", "2026-08")
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("Compare() = %#v fields %#v error %v", result, fields, err)
+	}
+	if result.From.TotalSinkingFundOpening != "0.00" || result.To.TotalSinkingFundOpening != "80.00" || result.Change.TotalSinkingFundOpening != "80.00" {
+		t.Fatalf("sinking fund totals = from %q to %q change %q", result.From.TotalSinkingFundOpening, result.To.TotalSinkingFundOpening, result.Change.TotalSinkingFundOpening)
+	}
+	if len(result.Categories) != 1 {
+		t.Fatalf("categories = %#v", result.Categories)
+	}
+	category := result.Categories[0]
+	if !category.FromSinkingFund || !category.ToSinkingFund || category.FromSinkingFundOpening != "0.00" || category.ToSinkingFundOpening != "80.00" || category.SinkingFundOpeningChange != "80.00" {
+		t.Fatalf("sinking fund category = %#v", category)
+	}
 }
 
 func TestCompareMonthsValidationOrderAndRelationship(t *testing.T) {
