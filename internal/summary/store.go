@@ -19,12 +19,15 @@ var (
 
 // MonthlyResult is the canonical result of get_monthly_summary.
 type MonthlyResult struct {
-	Month         string
-	TotalBudget   string
-	TotalSpending string
-	Remaining     string
-	SpentOfBudget *string
-	Categories    []contract.MonthlySummaryCategory
+	Month                   string
+	TotalBaseBudget         string
+	TotalSinkingFundOpening string
+	TotalRolloverAdjustment string
+	TotalBudget             string
+	TotalSpending           string
+	Remaining               string
+	SpentOfBudget           *string
+	Categories              []contract.MonthlySummaryCategory
 }
 
 // ComparisonResult is the canonical result of compare_months.
@@ -193,7 +196,7 @@ func formatRemaining(budget, spending int64) (string, error) {
 }
 
 func SpentOfBudget(spendingHundredths, budgetHundredths int64) (*string, error) {
-	if budgetHundredths == 0 {
+	if budgetHundredths <= 0 {
 		return nil, nil
 	}
 	product, ok := checkedMultiply(spendingHundredths, 10000)
@@ -201,6 +204,24 @@ func SpentOfBudget(spendingHundredths, budgetHundredths int64) (*string, error) 
 		return nil, fmtOverflow("spent of budget")
 	}
 	formatted, err := contract.FormatAmount(product / budgetHundredths)
+	if err != nil {
+		return nil, err
+	}
+	return &formatted, nil
+}
+
+// compositionShare returns an exact, truncated hundredths percentage without
+// using floating-point arithmetic. A non-positive denominator has no defined
+// composition share.
+func compositionShare(amountHundredths, totalHundredths int64) (*string, error) {
+	if totalHundredths <= 0 {
+		return nil, nil
+	}
+	product, ok := checkedMultiply(amountHundredths, 10000)
+	if !ok {
+		return nil, fmtOverflow("composition share")
+	}
+	formatted, err := contract.FormatAmount(product / totalHundredths)
 	if err != nil {
 		return nil, err
 	}

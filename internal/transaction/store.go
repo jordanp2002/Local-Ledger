@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 )
 
 var (
@@ -130,6 +131,7 @@ type AddResult struct {
 	CategorySource        string
 	MerchantMappingAction string
 	IdempotentReplay      bool
+	RolloverOffers        []contract.RolloverOffer
 }
 
 type NotePatch struct {
@@ -154,7 +156,8 @@ type UpdateInput struct {
 
 // UpdateResult is the canonical joined transaction after a patch.
 type UpdateResult struct {
-	Transaction contract.Transaction
+	Transaction    contract.Transaction
+	RolloverOffers []contract.RolloverOffer
 }
 
 // Store owns transaction validation and persistence.
@@ -547,6 +550,10 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 		return AddResult{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	before, err := rollover.Snapshot(ctx, tx)
+	if err != nil {
+		return AddResult{}, nil, err
+	}
 
 	result, err := addInTx(ctx, tx, in)
 	if isUniqueConstraintOn(err, "transaction_idempotency") {
@@ -560,10 +567,19 @@ func (s *Store) add(ctx context.Context, in validatedAdd) (AddResult, []contract
 	if err != nil {
 		return AddResult{}, nil, err
 	}
+	offers, err := rollover.BuildOffers(ctx, tx, before, transactionOfferChanges(result.Transaction))
+	if err != nil {
+		return AddResult{}, nil, err
+	}
+	result.RolloverOffers = offers
 	if err := tx.Commit(); err != nil {
 		return AddResult{}, nil, err
 	}
 	return result, nil, nil
+}
+
+func transactionOfferChanges(recorded contract.Transaction) []rollover.OfferChange {
+	return rollover.OfferChangesForTransaction(recorded)
 }
 
 func addValidatedInTx(ctx context.Context, tx *sql.Tx, in validatedAdd) (AddResult, error) {

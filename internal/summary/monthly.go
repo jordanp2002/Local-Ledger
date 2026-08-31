@@ -26,7 +26,7 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 		return MonthlyResult{}, nil, err
 	}
 
-	amounts, totalBudget, err := loadMonthBudgets(ctx, tx, month)
+	amounts, totals, err := loadMonthBudgets(ctx, tx, month)
 	if err != nil {
 		return MonthlyResult{}, nil, err
 	}
@@ -37,7 +37,7 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 
 	kept := make([]int64, 0, len(amounts))
 	for id, row := range amounts {
-		if row.budget > 0 || row.spending > 0 {
+		if row.budget != 0 || row.baseBudget != 0 || row.rolloverAdjustment != 0 || row.spending > 0 {
 			kept = append(kept, id)
 		}
 	}
@@ -49,7 +49,15 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 	categories := make([]contract.MonthlySummaryCategory, 0, len(ordered))
 	for _, id := range ordered {
 		row := amounts[id]
-		budget, err := contract.FormatAmount(row.budget)
+		baseBudget, err := contract.FormatAmount(row.baseBudget)
+		if err != nil {
+			return MonthlyResult{}, nil, err
+		}
+		adjustment, err := contract.FormatSignedAmount(row.rolloverAdjustment)
+		if err != nil {
+			return MonthlyResult{}, nil, err
+		}
+		budget, err := contract.FormatSignedAmount(row.budget)
 		if err != nil {
 			return MonthlyResult{}, nil, err
 		}
@@ -65,17 +73,43 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 		if err != nil {
 			return MonthlyResult{}, nil, err
 		}
+		shareOfBaseBudget, err := compositionShare(row.baseBudget, totals.baseBudget)
+		if err != nil {
+			return MonthlyResult{}, nil, err
+		}
+		shareOfSpending, err := compositionShare(row.spending, totalSpending)
+		if err != nil {
+			return MonthlyResult{}, nil, err
+		}
 		categories = append(categories, contract.MonthlySummaryCategory{
-			CategoryID:    id,
-			Category:      row.name,
-			Budget:        budget,
-			Spending:      spending,
-			Remaining:     remaining,
-			SpentOfBudget: spent,
+			CategoryID:         id,
+			Category:           row.name,
+			BaseBudget:         baseBudget,
+			SinkingFund:        row.sinkingFund,
+			SinkingFundOpening: formatSignedOrZero(row.sinkingFundOpening),
+			RolloverAdjustment: adjustment,
+			Budget:             budget,
+			Spending:           spending,
+			Remaining:          remaining,
+			SpentOfBudget:      spent,
+			ShareOfBaseBudget:  shareOfBaseBudget,
+			ShareOfSpending:    shareOfSpending,
 		})
 	}
 
-	formattedBudget, err := contract.FormatAmount(totalBudget)
+	formattedBaseBudget, err := contract.FormatAmount(totals.baseBudget)
+	if err != nil {
+		return MonthlyResult{}, nil, err
+	}
+	formattedAdjustment, err := contract.FormatSignedAmount(totals.rolloverAdjustment)
+	if err != nil {
+		return MonthlyResult{}, nil, err
+	}
+	formattedFundOpening, err := contract.FormatSignedAmount(totals.sinkingFundOpening)
+	if err != nil {
+		return MonthlyResult{}, nil, err
+	}
+	formattedBudget, err := contract.FormatSignedAmount(totals.totalBudget)
 	if err != nil {
 		return MonthlyResult{}, nil, err
 	}
@@ -83,11 +117,11 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 	if err != nil {
 		return MonthlyResult{}, nil, err
 	}
-	formattedRemaining, err := formatRemaining(totalBudget, totalSpending)
+	formattedRemaining, err := formatRemaining(totals.totalBudget, totalSpending)
 	if err != nil {
 		return MonthlyResult{}, nil, err
 	}
-	spentOfBudget, err := SpentOfBudget(totalSpending, totalBudget)
+	spentOfBudget, err := SpentOfBudget(totalSpending, totals.totalBudget)
 	if err != nil {
 		return MonthlyResult{}, nil, err
 	}
@@ -96,11 +130,22 @@ func (s *Store) monthly(ctx context.Context, month string) (MonthlyResult, []con
 		return MonthlyResult{}, nil, err
 	}
 	return MonthlyResult{
-		Month:         month,
-		TotalBudget:   formattedBudget,
-		TotalSpending: formattedSpending,
-		Remaining:     formattedRemaining,
-		SpentOfBudget: spentOfBudget,
-		Categories:    categories,
+		Month:                   month,
+		TotalBaseBudget:         formattedBaseBudget,
+		TotalSinkingFundOpening: formattedFundOpening,
+		TotalRolloverAdjustment: formattedAdjustment,
+		TotalBudget:             formattedBudget,
+		TotalSpending:           formattedSpending,
+		Remaining:               formattedRemaining,
+		SpentOfBudget:           spentOfBudget,
+		Categories:              categories,
 	}, nil, nil
+}
+
+func formatSignedOrZero(value int64) string {
+	formatted, err := contract.FormatSignedAmount(value)
+	if err != nil {
+		return "0.00"
+	}
+	return formatted
 }

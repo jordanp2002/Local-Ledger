@@ -21,8 +21,8 @@ func TestSummaryToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(result.Tools))
+	if len(result.Tools) != 36 {
+		t.Fatalf("tool count = %d, want 36", len(result.Tools))
 	}
 
 	monthly := toolByName(t, result.Tools, "get_monthly_summary")
@@ -235,7 +235,7 @@ func TestGetMonthlySummarySuccess(t *testing.T) {
 		t.Fatalf("get_monthly_summary failed: %s", structuredJSON(t, result))
 	}
 	got := structuredObject(t, result)
-	if keys := objectKeys(got); strings.Join(keys, ",") != "categories,month,ok,remaining,spent_of_budget,total_budget,total_spending" {
+	if keys := objectKeys(got); strings.Join(keys, ",") != "categories,month,ok,remaining,spent_of_budget,total_base_budget,total_budget,total_rollover_adjustment,total_sinking_fund_opening_balance,total_spending" {
 		t.Fatalf("keys = %v", keys)
 	}
 	if got["ok"] != true || got["month"] != "2026-08" || got["total_budget"] != "650.00" || got["total_spending"] != "120.00" || got["remaining"] != "530.00" || got["spent_of_budget"] != "18.46" {
@@ -245,7 +245,7 @@ func TestGetMonthlySummarySuccess(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("categories = %#v", rows)
 	}
-	if keys := objectKeys(rows[0]); strings.Join(keys, ",") != "budget,category,category_id,remaining,spending,spent_of_budget" {
+	if keys := objectKeys(rows[0]); strings.Join(keys, ",") != "base_budget,budget,category,category_id,remaining,rollover_adjustment,share_of_base_budget,share_of_spending,sinking_fund,sinking_fund_opening_balance,spending,spent_of_budget" {
 		t.Fatalf("category row keys = %v", keys)
 	}
 	if rows[0]["category"] != "Dining" || rows[0]["budget"] != "150.00" || rows[0]["category_id"] != float64(dining.ID) || rows[0]["spent_of_budget"] != "20.00" {
@@ -260,7 +260,7 @@ func TestGetMonthlySummarySuccess(t *testing.T) {
 		t.Fatalf("get_category_summary failed: %s", structuredJSON(t, categoryResult))
 	}
 	categoryGot := structuredObject(t, categoryResult)
-	if keys := objectKeys(categoryGot); strings.Join(keys, ",") != "budget,category,category_id,month,ok,remaining,spent_of_budget,total_spending,transaction_count" {
+	if keys := objectKeys(categoryGot); strings.Join(keys, ",") != "base_budget,budget,category,category_id,month,ok,remaining,rollover_adjustment,sinking_fund,sinking_fund_opening_balance,spent_of_budget,total_spending,transaction_count" {
 		t.Fatalf("category keys = %v", keys)
 	}
 	if categoryGot["ok"] != true || categoryGot["category"] != "Groceries" || categoryGot["budget"] != "500.00" || categoryGot["total_spending"] != "90.00" || categoryGot["remaining"] != "410.00" || categoryGot["spent_of_budget"] != "18.00" || categoryGot["transaction_count"] != float64(1) {
@@ -337,7 +337,7 @@ func TestGetCategorySummaryMissingCategoryAndUnbudgetedSpending(t *testing.T) {
 	if got["category"] != "Health" || got["budget"] != "0.00" || got["total_spending"] != "25.00" || got["remaining"] != "-25.00" || got["transaction_count"] != float64(1) || got["spent_of_budget"] != nil {
 		t.Fatalf("unbudgeted Health = %s", structuredJSON(t, unbudgeted))
 	}
-	if keys := objectKeys(got); strings.Join(keys, ",") != "budget,category,category_id,month,ok,remaining,spent_of_budget,total_spending,transaction_count" {
+	if keys := objectKeys(got); strings.Join(keys, ",") != "base_budget,budget,category,category_id,month,ok,remaining,rollover_adjustment,sinking_fund,sinking_fund_opening_balance,spent_of_budget,total_spending,transaction_count" {
 		t.Fatalf("unbudgeted keys = %v, want spent_of_budget present as null", keys)
 	}
 }

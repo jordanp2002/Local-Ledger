@@ -24,8 +24,8 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(result.Tools))
+	if len(result.Tools) != 36 {
+		t.Fatalf("tool count = %d, want 36", len(result.Tools))
 	}
 
 	var tool *mcp.Tool
@@ -73,7 +73,7 @@ func TestAddTransactionMappingActions(t *testing.T) {
 			t.Fatalf("add_transaction created failed: %s", structuredJSON(t, result))
 		}
 		got := structuredObject(t, result)
-		if keys := objectKeys(got); strings.Join(keys, ",") != "category_source,idempotent_replay,merchant_mapping_action,ok,transaction" {
+		if keys := objectKeys(got); strings.Join(keys, ",") != "category_source,idempotent_replay,merchant_mapping_action,ok,rollover_offers,transaction" {
 			t.Fatalf("add_transaction keys = %v", keys)
 		}
 		if got["ok"] != true || got["category_source"] != "provided" || got["merchant_mapping_action"] != "created" {
@@ -456,8 +456,8 @@ func TestUpdateRemoveTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(result.Tools))
+	if len(result.Tools) != 36 {
+		t.Fatalf("tool count = %d, want 36", len(result.Tools))
 	}
 
 	updateTool := toolByName(t, result.Tools, "update_transaction")
@@ -608,8 +608,8 @@ func TestUpdateTransactionIndependentFields(t *testing.T) {
 				t.Fatalf("update_transaction %s failed: %s", tc.name, structuredJSON(t, result))
 			}
 			got := structuredObject(t, result)
-			if keys := objectKeys(got); strings.Join(keys, ",") != "ok,transaction" {
-				t.Fatalf("update_transaction keys = %v, want [ok transaction]", keys)
+			if keys := objectKeys(got); strings.Join(keys, ",") != "ok,rollover_offers,transaction" {
+				t.Fatalf("update_transaction keys = %v, want [ok rollover_offers transaction]", keys)
 			}
 			if got["ok"] != true {
 				t.Fatalf("ok = %v, want true", got["ok"])
@@ -952,8 +952,8 @@ func TestListTransactionsToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(result.Tools))
+	if len(result.Tools) != 36 {
+		t.Fatalf("tool count = %d, want 36", len(result.Tools))
 	}
 
 	tool := toolByName(t, result.Tools, "list_transactions")

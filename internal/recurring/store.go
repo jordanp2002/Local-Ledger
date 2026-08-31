@@ -80,11 +80,12 @@ type PreviewDueResult struct {
 }
 
 type MaterializeDueResult struct {
-	AsOfDate     string
-	Month        string
-	Created      int64
-	TotalAmount  string
-	Transactions []contract.Transaction
+	AsOfDate       string
+	Month          string
+	Created        int64
+	TotalAmount    string
+	Transactions   []contract.Transaction
+	RolloverOffers []contract.RolloverOffer
 }
 
 type RecurringCategoryInactiveError struct {

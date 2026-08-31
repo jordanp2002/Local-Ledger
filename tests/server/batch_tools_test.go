@@ -21,8 +21,8 @@ func TestAddTransactionsToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 30 {
-		t.Fatalf("tool count = %d, want 30", len(result.Tools))
+	if len(result.Tools) != 36 {
+		t.Fatalf("tool count = %d, want 36", len(result.Tools))
 	}
 
 	tool := toolByName(t, result.Tools, "add_transactions")
@@ -105,7 +105,7 @@ func TestAddTransactionsSuccessAndReplay(t *testing.T) {
 		t.Fatalf("add_transactions failed: %s", structuredJSON(t, result))
 	}
 	got := structuredObject(t, result)
-	if keys := objectKeys(got); strings.Join(keys, ",") != "count,idempotency_key,idempotent_replay,ok,total_amount,transactions" {
+	if keys := objectKeys(got); strings.Join(keys, ",") != "count,idempotency_key,idempotent_replay,ok,rollover_offers,total_amount,transactions" {
 		t.Fatalf("add_transactions keys = %v", keys)
 	}
 	if got["ok"] != true || got["idempotency_key"] != "statement-2026-08-19-page-1" || got["idempotent_replay"] != false {
@@ -347,7 +347,7 @@ func TestAddTransactionsAppearInExistingSummaries(t *testing.T) {
 	}
 }
 
-const addTransactionsDiscoveryDescription = "Atomically record a confirmed batch of structured expenses using exact merchant-default rules. Submit only user-confirmed expense rows — not images, files, credits, payments, pending transactions, or unreadable lines. Resolve every uncategorized merchant with the user before calling. Each row requires amount, merchant, and a YYYY-MM-DD date; dates are never defaulted to today. The first occurrence of a new merchant in the array must include category unless an exact mapping already exists. `idempotency_key` is required. Reuse the exact same key and payload if retrying this confirmed batch; do not mint a new key for a retry. The server does not detect duplicate purchases. The call is all-or-nothing: any invalid or uncategorized row writes nothing."
+const addTransactionsDiscoveryDescription = "Atomically record a confirmed batch of structured expenses using exact merchant-default rules. Submit only user-confirmed expense rows — not images, files, credits, payments, pending transactions, or unreadable lines. Resolve every uncategorized merchant with the user before calling. Each row requires amount, merchant, and a YYYY-MM-DD date; dates are never defaulted to today. The first occurrence of a new merchant in the array must include category unless an exact mapping already exists. `idempotency_key` is required. Reuse the exact same key and payload if retrying this confirmed batch; do not mint a new key for a retry. The server does not detect duplicate purchases. The call is all-or-nothing: any invalid or uncategorized row writes nothing. If `rollover_offers` is returned, show the non-mutating offer and ask whether the user wants to create the explicit one-month rollover."
 
 func nestedSchemaObject(t *testing.T, value any) map[string]any {
 	t.Helper()

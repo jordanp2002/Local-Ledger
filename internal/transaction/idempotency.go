@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jordanp2002/local-finance-mcp/internal/contract"
 )
 
 const (
@@ -107,6 +109,7 @@ func replayIdempotencyRecord(ctx context.Context, q rowQueryer, key, fingerprint
 		CategorySource:        existing.categorySource,
 		MerchantMappingAction: existing.mappingAction,
 		IdempotentReplay:      true,
+		RolloverOffers:        []contract.RolloverOffer{},
 	}, nil
 }
 

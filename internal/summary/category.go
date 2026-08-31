@@ -41,16 +41,34 @@ func (s *Store) category(ctx context.Context, categoryName, month string) (contr
 		return contract.CategorySummary{}, nil, err
 	}
 
-	budget, err := loadCategoryBudget(ctx, tx, month, category.ID)
+	amounts, _, err := loadMonthBudgets(ctx, tx, month)
 	if err != nil {
 		return contract.CategorySummary{}, nil, err
+	}
+	row := amounts[category.ID]
+	var baseBudget, adjustment, budget, fundOpening int64
+	var fund bool
+	if row != nil {
+		baseBudget = row.baseBudget
+		adjustment = row.rolloverAdjustment
+		budget = row.budget
+		fund = row.sinkingFund
+		fundOpening = row.sinkingFundOpening
 	}
 	spending, count, err := loadCategorySpending(ctx, tx, category.ID, startDate, endDate)
 	if err != nil {
 		return contract.CategorySummary{}, nil, err
 	}
 
-	formattedBudget, err := contract.FormatAmount(budget)
+	formattedBaseBudget, err := contract.FormatAmount(baseBudget)
+	if err != nil {
+		return contract.CategorySummary{}, nil, err
+	}
+	formattedAdjustment, err := contract.FormatSignedAmount(adjustment)
+	if err != nil {
+		return contract.CategorySummary{}, nil, err
+	}
+	formattedBudget, err := contract.FormatSignedAmount(budget)
 	if err != nil {
 		return contract.CategorySummary{}, nil, err
 	}
@@ -71,13 +89,17 @@ func (s *Store) category(ctx context.Context, categoryName, month string) (contr
 		return contract.CategorySummary{}, nil, err
 	}
 	return contract.CategorySummary{
-		CategoryID:       category.ID,
-		Category:         category.Name,
-		Month:            month,
-		Budget:           formattedBudget,
-		TotalSpending:    formattedSpending,
-		Remaining:        remaining,
-		SpentOfBudget:    spent,
-		TransactionCount: count,
+		CategoryID:         category.ID,
+		Category:           category.Name,
+		Month:              month,
+		BaseBudget:         formattedBaseBudget,
+		SinkingFund:        fund,
+		SinkingFundOpening: formatSignedOrZero(fundOpening),
+		RolloverAdjustment: formattedAdjustment,
+		Budget:             formattedBudget,
+		TotalSpending:      formattedSpending,
+		Remaining:          remaining,
+		SpentOfBudget:      spent,
+		TransactionCount:   count,
 	}, nil, nil
 }

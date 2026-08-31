@@ -40,33 +40,39 @@ func TestCompareMonthsTotalsCategoriesAndCanonicalNames(t *testing.T) {
 		t.Fatalf("Compare() = %#v fields %#v error %v", result, fields, err)
 	}
 	if result.From != (contract.ComparisonMonth{
-		Month: "2026-07", TotalBudget: "600.00", TotalSpending: "120.00", Remaining: "480.00",
+		Month: "2026-07", TotalBaseBudget: "600.00", TotalRolloverAdjustment: "0.00", TotalBudget: "600.00", TotalSpending: "120.00", Remaining: "480.00",
 	}) {
 		t.Fatalf("from = %#v", result.From)
 	}
 	if result.To != (contract.ComparisonMonth{
-		Month: "2026-08", TotalBudget: "450.00", TotalSpending: "140.00", Remaining: "310.00",
+		Month: "2026-08", TotalBaseBudget: "450.00", TotalRolloverAdjustment: "0.00", TotalBudget: "450.00", TotalSpending: "140.00", Remaining: "310.00",
 	}) {
 		t.Fatalf("to = %#v", result.To)
 	}
 	if result.Change != (contract.ComparisonChange{
-		TotalBudget: "-150.00", TotalSpending: "20.00", Remaining: "-170.00",
+		TotalBaseBudget: "-150.00", TotalRolloverAdjustment: "0.00", TotalBudget: "-150.00", TotalSpending: "20.00", Remaining: "-170.00",
 	}) {
 		t.Fatalf("change = %#v", result.Change)
 	}
 	wantCategories := []contract.ComparisonCategory{
 		{
 			CategoryID: dining.ID, Category: "Food & Dining",
+			FromBaseBudget: "100.00", ToBaseBudget: "0.00", BaseBudgetChange: "-100.00",
+			FromRolloverAdjustment: "0.00", ToRolloverAdjustment: "0.00", RolloverAdjustmentChange: "0.00",
 			FromBudget: "100.00", ToBudget: "0.00", BudgetChange: "-100.00",
 			FromSpending: "30.00", ToSpending: "0.00", SpendingChange: "-30.00",
 		},
 		{
 			CategoryID: groceries.ID, Category: "Groceries",
+			FromBaseBudget: "500.00", ToBaseBudget: "450.00", BaseBudgetChange: "-50.00",
+			FromRolloverAdjustment: "0.00", ToRolloverAdjustment: "0.00", RolloverAdjustmentChange: "0.00",
 			FromBudget: "500.00", ToBudget: "450.00", BudgetChange: "-50.00",
 			FromSpending: "90.00", ToSpending: "120.00", SpendingChange: "30.00",
 		},
 		{
 			CategoryID: health.ID, Category: "Health",
+			FromBaseBudget: "0.00", ToBaseBudget: "0.00", BaseBudgetChange: "0.00",
+			FromRolloverAdjustment: "0.00", ToRolloverAdjustment: "0.00", RolloverAdjustmentChange: "0.00",
 			FromBudget: "0.00", ToBudget: "0.00", BudgetChange: "0.00",
 			FromSpending: "0.00", ToSpending: "20.00", SpendingChange: "20.00",
 		},

@@ -9,11 +9,12 @@ import (
 	"log"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const addTransactionsDescription = "Atomically record a confirmed batch of structured expenses using exact merchant-default rules. Submit only user-confirmed expense rows — not images, files, credits, payments, pending transactions, or unreadable lines. Resolve every uncategorized merchant with the user before calling. Each row requires amount, merchant, and a YYYY-MM-DD date; dates are never defaulted to today. The first occurrence of a new merchant in the array must include category unless an exact mapping already exists. `idempotency_key` is required. Reuse the exact same key and payload if retrying this confirmed batch; do not mint a new key for a retry. The server does not detect duplicate purchases. The call is all-or-nothing: any invalid or uncategorized row writes nothing."
+const addTransactionsDescription = "Atomically record a confirmed batch of structured expenses using exact merchant-default rules. Submit only user-confirmed expense rows — not images, files, credits, payments, pending transactions, or unreadable lines. Resolve every uncategorized merchant with the user before calling. Each row requires amount, merchant, and a YYYY-MM-DD date; dates are never defaulted to today. The first occurrence of a new merchant in the array must include category unless an exact mapping already exists. `idempotency_key` is required. Reuse the exact same key and payload if retrying this confirmed batch; do not mint a new key for a retry. The server does not detect duplicate purchases. The call is all-or-nothing: any invalid or uncategorized row writes nothing. If `rollover_offers` is returned, show the non-mutating offer and ask whether the user wants to create the explicit one-month rollover."
 
 type addTransactionInput struct {
 	Amount         string  `json:"amount"`
@@ -25,11 +26,12 @@ type addTransactionInput struct {
 }
 
 type addTransactionOutput struct {
-	OK                    bool                 `json:"ok"`
-	Transaction           contract.Transaction `json:"transaction"`
-	CategorySource        string               `json:"category_source"`
-	MerchantMappingAction string               `json:"merchant_mapping_action"`
-	IdempotentReplay      bool                 `json:"idempotent_replay"`
+	OK                    bool                     `json:"ok"`
+	Transaction           contract.Transaction     `json:"transaction"`
+	CategorySource        string                   `json:"category_source"`
+	MerchantMappingAction string                   `json:"merchant_mapping_action"`
+	IdempotentReplay      bool                     `json:"idempotent_replay"`
+	RolloverOffers        []contract.RolloverOffer `json:"rollover_offers"`
 }
 
 type addSplitTransactionInput struct {
@@ -71,6 +73,7 @@ type addTransactionsOutput struct {
 	Count            int                        `json:"count"`
 	TotalAmount      string                     `json:"total_amount"`
 	Transactions     []addTransactionsRowOutput `json:"transactions"`
+	RolloverOffers   []contract.RolloverOffer   `json:"rollover_offers"`
 }
 
 type updateTransactionInput struct {
@@ -89,8 +92,9 @@ type updateAllocationInput struct {
 }
 
 type updateTransactionOutput struct {
-	OK          bool                 `json:"ok"`
-	Transaction contract.Transaction `json:"transaction"`
+	OK             bool                     `json:"ok"`
+	Transaction    contract.Transaction     `json:"transaction"`
+	RolloverOffers []contract.RolloverOffer `json:"rollover_offers"`
 }
 
 type removeTransactionInput struct {
@@ -127,13 +131,13 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 
 	mcp.AddTool[addTransactionInput, any](srv, &mcp.Tool{
 		Name:        "add_transaction",
-		Description: "Record one expense and apply exact merchant-default mapping rules atomically. An optional idempotency_key makes a successful retry return the original transaction instead of creating a duplicate.",
+		Description: "Record one expense and apply exact merchant-default mapping rules atomically. An optional idempotency_key makes a successful retry return the original transaction instead of creating a duplicate. If rollover_offers is returned, show the offer and ask whether to create the explicit one-month rollover.",
 		Annotations: writableToolAnnotations(true, false),
 	}, tools.addTransaction)
 
 	mcp.AddTool[addSplitTransactionInput, any](srv, &mcp.Tool{
 		Name:        "add_split_transaction",
-		Description: "Record one confirmed purchase across two or more active categories as one transaction. Allocation amounts must be positive and their checked sum is the transaction amount. An optional idempotency_key makes an exact retry return the original purchase; split purchases never create or replace a merchant default.",
+		Description: "Record one confirmed purchase across two or more active categories as one transaction. Allocation amounts must be positive and their checked sum is the transaction amount. An optional idempotency_key makes an exact retry return the original purchase; split purchases never create or replace a merchant default. If rollover_offers is returned, show the offer and ask whether to create the explicit one-month rollover.",
 		Annotations: writableToolAnnotations(true, false),
 	}, tools.addSplitTransaction)
 
@@ -145,7 +149,7 @@ func registerTransactionTools(srv *mcp.Server, store *transaction.Store, logger 
 
 	mcp.AddTool[updateTransactionInput, any](srv, &mcp.Tool{
 		Name:        "update_transaction",
-		Description: "Patch an existing expense without changing merchant defaults or budgets.",
+		Description: "Patch an existing expense without changing merchant defaults or budgets. If rollover_offers is returned, show the offer and ask whether to create the explicit one-month rollover.",
 		Annotations: writableToolAnnotations(true, false),
 	}, tools.updateTransaction)
 
@@ -184,6 +188,7 @@ func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRe
 		CategorySource:        result.CategorySource,
 		MerchantMappingAction: result.MerchantMappingAction,
 		IdempotentReplay:      result.IdempotentReplay,
+		RolloverOffers:        nonNilRolloverOffers(result.RolloverOffers),
 	})
 }
 
@@ -211,6 +216,7 @@ func (t *transactionTools) addSplitTransaction(ctx context.Context, _ *mcp.CallT
 		CategorySource:        result.CategorySource,
 		MerchantMappingAction: result.MerchantMappingAction,
 		IdempotentReplay:      result.IdempotentReplay,
+		RolloverOffers:        nonNilRolloverOffers(result.RolloverOffers),
 	})
 }
 
@@ -257,6 +263,7 @@ func (t *transactionTools) addTransactions(ctx context.Context, _ *mcp.CallToolR
 		Count:            len(items),
 		TotalAmount:      totalAmount,
 		Transactions:     items,
+		RolloverOffers:   nonNilRolloverOffers(result.RolloverOffers),
 	})
 }
 
@@ -275,8 +282,9 @@ func (t *transactionTools) updateTransaction(ctx context.Context, req *mcp.CallT
 	}
 
 	return toolOK(updateTransactionOutput{
-		OK:          true,
-		Transaction: result.Transaction,
+		OK:             true,
+		Transaction:    result.Transaction,
+		RolloverOffers: nonNilRolloverOffers(result.RolloverOffers),
 	})
 }
 
@@ -407,6 +415,11 @@ func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.Cal
 		)))
 	}
 
+	var dependency *rollover.DependencyConflictError
+	if errors.As(err, &dependency) {
+		return toolError(dependencyConflictEnvelope(dependency))
+	}
+
 	return t.internalError(tool, err)
 }
 
@@ -463,6 +476,13 @@ func (t *transactionTools) internalError(tool string, err error) (*mcp.CallToolR
 		t.logger.Printf("%s: %v", tool, err)
 	}
 	return toolError(contract.NewInternalErrorEnvelope())
+}
+
+func nonNilRolloverOffers(offers []contract.RolloverOffer) []contract.RolloverOffer {
+	if offers == nil {
+		return []contract.RolloverOffer{}
+	}
+	return offers
 }
 
 // updateInputFromRequest maps typed MCP input plus raw argument presence.

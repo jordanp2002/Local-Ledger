@@ -21,6 +21,12 @@ const (
 	ErrorCodeBudgetSourceEmpty                   ErrorCode = "budget_source_empty"
 	ErrorCodeIdempotencyConflict                 ErrorCode = "idempotency_conflict"
 	ErrorCodeSplitTransactionRequiresAllocations ErrorCode = "split_transaction_requires_allocations"
+	ErrorCodeBudgetRolloverNotEligible           ErrorCode = "budget_rollover_not_eligible"
+	ErrorCodeBudgetRolloverNotFound              ErrorCode = "budget_rollover_not_found"
+	ErrorCodeBudgetRolloverDependencyConflict    ErrorCode = "budget_rollover_dependency_conflict"
+	ErrorCodeSinkingFundNotActive                ErrorCode = "sinking_fund_not_active"
+	ErrorCodeSinkingFundActive                   ErrorCode = "sinking_fund_active"
+	ErrorCodeSinkingFundRolloverConflict         ErrorCode = "sinking_fund_rollover_conflict"
 	ErrorCodeRecurringTransactionNotFound        ErrorCode = "recurring_transaction_not_found"
 	ErrorCodeRecurringCategoryInactive           ErrorCode = "recurring_category_inactive"
 	ErrorCodeInternalError                       ErrorCode = "internal_error"
@@ -154,6 +160,18 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The idempotency key conflicts with an existing request."
 	case ErrorCodeSplitTransactionRequiresAllocations:
 		return "This split transaction must be updated by supplying its complete allocations."
+	case ErrorCodeBudgetRolloverNotEligible:
+		return "The requested budget rollover is not eligible."
+	case ErrorCodeBudgetRolloverNotFound:
+		return "The requested budget rollover was not found."
+	case ErrorCodeBudgetRolloverDependencyConflict:
+		return "The budget rollover conflicts with a dependent adjustment."
+	case ErrorCodeSinkingFundNotActive:
+		return "The sinking fund is not active."
+	case ErrorCodeSinkingFundActive:
+		return "The sinking fund is already active."
+	case ErrorCodeSinkingFundRolloverConflict:
+		return "The sinking fund conflicts with an explicit budget rollover."
 	case ErrorCodeRecurringTransactionNotFound:
 		return "The requested recurring transaction was not found."
 	case ErrorCodeRecurringCategoryInactive:

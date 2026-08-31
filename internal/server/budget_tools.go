@@ -8,6 +8,7 @@ import (
 
 	"github.com/jordanp2002/local-finance-mcp/internal/budget"
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -180,6 +181,11 @@ func (t *budgetTools) mapBudgetError(tool string, err error) (*mcp.CallToolResul
 				"active_categories": activeCategories(inactive.ActiveCategories),
 			},
 		)))
+	}
+
+	var dependency *rollover.DependencyConflictError
+	if errors.As(err, &dependency) {
+		return toolError(dependencyConflictEnvelope(dependency))
 	}
 
 	return t.internalError(tool, err)

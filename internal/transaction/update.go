@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
 )
 
 type validatedUpdate struct {
@@ -166,6 +167,10 @@ func (s *Store) update(ctx context.Context, in validatedUpdate) (UpdateResult, [
 		return UpdateResult{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	before, err := rollover.Snapshot(ctx, tx)
+	if err != nil {
+		return UpdateResult{}, nil, err
+	}
 
 	loaded, err := getTransactionByID(ctx, tx, in.id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -263,10 +268,17 @@ func (s *Store) update(ctx context.Context, in validatedUpdate) (UpdateResult, [
 	if err != nil {
 		return UpdateResult{}, nil, err
 	}
+	if err := rollover.ValidateOutgoing(ctx, tx); err != nil {
+		return UpdateResult{}, nil, err
+	}
+	offers, err := rollover.BuildOffers(ctx, tx, before, transactionOfferChanges(recorded))
+	if err != nil {
+		return UpdateResult{}, nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return UpdateResult{}, nil, err
 	}
-	return UpdateResult{Transaction: recorded}, nil, nil
+	return UpdateResult{Transaction: recorded, RolloverOffers: offers}, nil, nil
 }
 
 func sameAllocations(existing []contract.TransactionAllocation, replacement []validatedAllocation) bool {

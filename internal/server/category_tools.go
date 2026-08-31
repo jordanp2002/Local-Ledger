@@ -8,6 +8,8 @@ import (
 
 	"github.com/jordanp2002/local-finance-mcp/internal/category"
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
+	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -139,6 +141,14 @@ func (t *categoryTools) disableCategory(ctx context.Context, _ *mcp.CallToolRequ
 			return toolError(invalidNameEnvelope("must not contain NUL characters"))
 		case errors.Is(err, category.ErrInvalidName):
 			return toolError(invalidNameEnvelope("must not be empty"))
+		case errors.Is(err, rollover.ErrDependencyConflict):
+			var dependency *rollover.DependencyConflictError
+			if !errors.As(err, &dependency) {
+				return t.internalError("disable_category", err)
+			}
+			return toolError(dependencyConflictEnvelope(dependency))
+		case errors.Is(err, sinkingfund.ErrActive):
+			return toolError(contract.NewErrorEnvelope(contract.NewError(contract.ErrorCodeSinkingFundActive, "Disable the sinking fund before disabling the category.", false, nil)))
 		default:
 			return t.internalError("disable_category", err)
 		}
