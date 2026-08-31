@@ -94,11 +94,19 @@ func addTransaction(t *testing.T, ctx context.Context, store *transaction.Store,
 
 func insertRawTransaction(t *testing.T, ctx context.Context, db *sql.DB, merchant string, amountHundredths int64, date string, categoryID int64) {
 	t.Helper()
-	if _, err := db.ExecContext(ctx, `
-		INSERT INTO transactions (merchant, amount_hundredths, date, category_id)
-		VALUES (?, ?, ?, ?)
-	`, merchant, amountHundredths, date, categoryID); err != nil {
+	result, err := db.ExecContext(ctx, `INSERT INTO transactions (merchant, date) VALUES (?, ?)`, merchant, date)
+	if err != nil {
 		t.Fatalf("insert transaction: %v", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("read transaction id: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+		VALUES (?, ?, ?)
+	`, id, categoryID, amountHundredths); err != nil {
+		t.Fatalf("insert transaction allocation: %v", err)
 	}
 }
 

@@ -24,8 +24,8 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 26 {
-		t.Fatalf("tool count = %d, want 26", len(result.Tools))
+	if len(result.Tools) != 30 {
+		t.Fatalf("tool count = %d, want 30", len(result.Tools))
 	}
 
 	var tool *mcp.Tool
@@ -80,13 +80,13 @@ func TestAddTransactionMappingActions(t *testing.T) {
 			t.Fatalf("created metadata = %s", structuredJSON(t, result))
 		}
 		txn := decodeTransaction(t, got["transaction"])
-		if keys := objectKeys(objectField(t, got, "transaction")); strings.Join(keys, ",") != "amount,category,category_id,created_at,date,id,merchant,note,updated_at" {
+		if keys := objectKeys(objectField(t, got, "transaction")); strings.Join(keys, ",") != "allocations,amount,category,category_id,created_at,date,id,merchant,note,updated_at" {
 			t.Fatalf("transaction keys = %v", objectKeys(objectField(t, got, "transaction")))
 		}
 		if txn.ID == 0 || txn.Merchant != "Metro" || txn.Amount != "20.50" {
 			t.Fatalf("created transaction = %#v, want Metro/20.50", txn)
 		}
-		if txn.CategoryID != groceries.ID || txn.Category != "Groceries" {
+		if transactionCategoryID(txn) != groceries.ID || transactionCategory(txn) != "Groceries" {
 			t.Fatalf("created category = %#v, want stored Groceries", txn)
 		}
 		if txn.Date != "2026-08-15" {
@@ -102,9 +102,10 @@ func TestAddTransactionMappingActions(t *testing.T) {
 		var storedMerchant, storedDate, storedCategory string
 		var storedAmount int64
 		if err := db.QueryRowContext(context.Background(), `
-			SELECT t.merchant, t.amount_hundredths, t.date, c.name
+			SELECT t.merchant, a.amount_hundredths, t.date, c.name
 			FROM transactions AS t
-			INNER JOIN categories AS c ON c.id = t.category_id
+			INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+			INNER JOIN categories AS c ON c.id = a.category_id
 			WHERE t.id = ?
 		`, txn.ID).Scan(&storedMerchant, &storedAmount, &storedDate, &storedCategory); err != nil {
 			t.Fatalf("select stored created transaction: %v", err)
@@ -136,7 +137,7 @@ func TestAddTransactionMappingActions(t *testing.T) {
 			t.Fatalf("matched known metadata = %s", structuredJSON(t, result))
 		}
 		txn := decodeTransaction(t, got["transaction"])
-		if txn.Merchant != "metro" || txn.CategoryID != groceries.ID || txn.Category != "Groceries" {
+		if txn.Merchant != "metro" || transactionCategoryID(txn) != groceries.ID || transactionCategory(txn) != "Groceries" {
 			t.Fatalf("matched known transaction = %#v", txn)
 		}
 		if objectField(t, got, "transaction")["note"] != nil {
@@ -196,7 +197,7 @@ func TestAddTransactionMappingActions(t *testing.T) {
 			t.Fatalf("preserved metadata = %s", structuredJSON(t, result))
 		}
 		txn := decodeTransaction(t, got["transaction"])
-		if txn.CategoryID != dining.ID || txn.Category != "Dining" || txn.Date != "2026-08-14" {
+		if transactionCategoryID(txn) != dining.ID || transactionCategory(txn) != "Dining" || txn.Date != "2026-08-14" {
 			t.Fatalf("preserved transaction = %#v, want Dining on 2026-08-14", txn)
 		}
 	})
@@ -228,7 +229,7 @@ func TestAddTransactionMappingActions(t *testing.T) {
 			t.Fatalf("replaced_inactive metadata = %s", structuredJSON(t, result))
 		}
 		txn := decodeTransaction(t, got["transaction"])
-		if txn.Merchant != "SHOPPERS" || txn.CategoryID != groceries.ID || txn.Category != "Groceries" {
+		if txn.Merchant != "SHOPPERS" || transactionCategoryID(txn) != groceries.ID || transactionCategory(txn) != "Groceries" {
 			t.Fatalf("replaced_inactive transaction = %#v", txn)
 		}
 	})
@@ -455,8 +456,8 @@ func TestUpdateRemoveTransactionToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 26 {
-		t.Fatalf("tool count = %d, want 26", len(result.Tools))
+	if len(result.Tools) != 30 {
+		t.Fatalf("tool count = %d, want 30", len(result.Tools))
 	}
 
 	updateTool := toolByName(t, result.Tools, "update_transaction")
@@ -522,7 +523,7 @@ func TestUpdateTransactionIndependentFields(t *testing.T) {
 				if after.Amount != "23.50" {
 					t.Fatalf("amount = %q, want 23.50", after.Amount)
 				}
-				if after.Merchant != before.Merchant || after.Category != before.Category || after.Date != before.Date || derefNote(after.Note) != derefNote(before.Note) {
+				if after.Merchant != before.Merchant || transactionCategory(after) != transactionCategory(before) || after.Date != before.Date || derefNote(after.Note) != derefNote(before.Note) {
 					t.Fatalf("amount patch changed other fields: before=%#v after=%#v", before, after)
 				}
 			},
@@ -536,7 +537,7 @@ func TestUpdateTransactionIndependentFields(t *testing.T) {
 				if after.Merchant != "Metro grocery store" {
 					t.Fatalf("merchant = %q, want Metro grocery store", after.Merchant)
 				}
-				if after.CategoryID != before.CategoryID || after.Category != before.Category || after.Amount != before.Amount {
+				if transactionCategoryID(after) != transactionCategoryID(before) || transactionCategory(after) != transactionCategory(before) || after.Amount != before.Amount {
 					t.Fatalf("merchant patch recategorized or changed amount: before=%#v after=%#v", before, after)
 				}
 			},
@@ -550,7 +551,7 @@ func TestUpdateTransactionIndependentFields(t *testing.T) {
 				"category": " dining ",
 			},
 			verify: func(t *testing.T, before, after contract.Transaction) {
-				if after.Category != "Dining" || after.CategoryID == before.CategoryID {
+				if transactionCategory(after) != "Dining" || transactionCategoryID(after) == transactionCategoryID(before) {
 					t.Fatalf("category = %#v, want Dining with a new category_id", after)
 				}
 				if after.Merchant != before.Merchant || after.Amount != before.Amount {
@@ -951,8 +952,8 @@ func TestListTransactionsToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 26 {
-		t.Fatalf("tool count = %d, want 26", len(result.Tools))
+	if len(result.Tools) != 30 {
+		t.Fatalf("tool count = %d, want 30", len(result.Tools))
 	}
 
 	tool := toolByName(t, result.Tools, "list_transactions")
@@ -1037,11 +1038,11 @@ func TestListTransactionsUnfilteredAndFilters(t *testing.T) {
 		t.Fatalf("unfiltered IDs = %v, want newest-first", gotIDs)
 	}
 	metro := rows[3]
-	if metro.Amount != "20.50" || metro.Merchant != "Metro" || metro.Category != "Groceries" || derefNote(metro.Note) != "weekly" {
+	if metro.Amount != "20.50" || metro.Merchant != "Metro" || transactionCategory(metro) != "Groceries" || derefNote(metro.Note) != "weekly" {
 		t.Fatalf("canonical Metro row = %#v, want 20.50/Metro/Groceries/weekly", metro)
 	}
 	metroRaw := asObject(t, got["transactions"].([]any)[3])
-	if keys := objectKeys(metroRaw); strings.Join(keys, ",") != "amount,category,category_id,created_at,date,id,merchant,note,updated_at" {
+	if keys := objectKeys(metroRaw); strings.Join(keys, ",") != "allocations,amount,category,category_id,created_at,date,id,merchant,note,updated_at" {
 		t.Fatalf("transaction keys = %v", keys)
 	}
 
@@ -1084,7 +1085,7 @@ func TestListTransactionsUnfilteredAndFilters(t *testing.T) {
 		t.Fatalf("inactive list ok = %v, want true", inactiveGot["ok"])
 	}
 	inactiveRows := listedTransactions(t, inactiveGot)
-	if len(inactiveRows) != 1 || inactiveRows[0].ID != augDining.ID || inactiveRows[0].Category != "Dining" {
+	if len(inactiveRows) != 1 || inactiveRows[0].ID != augDining.ID || transactionCategory(inactiveRows[0]) != "Dining" {
 		t.Fatalf("inactive filter = %#v, want historical Dining row", inactiveRows)
 	}
 	if asObject(t, structuredObject(t, inactive)["transactions"].([]any)[0])["note"] != nil {
@@ -1430,6 +1431,20 @@ func derefNote(note *string) string {
 		return ""
 	}
 	return *note
+}
+
+func transactionCategoryID(txn contract.Transaction) int64 {
+	if txn.CategoryID == nil {
+		return 0
+	}
+	return *txn.CategoryID
+}
+
+func transactionCategory(txn contract.Transaction) string {
+	if txn.Category == nil {
+		return ""
+	}
+	return *txn.Category
 }
 
 func decodeTransaction(t *testing.T, value any) contract.Transaction {

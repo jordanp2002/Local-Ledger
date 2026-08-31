@@ -385,13 +385,19 @@ func TestPreviewDueExistingRunExcluded(t *testing.T) {
 	}
 
 	resInsert, err := db.ExecContext(ctx, `
-		INSERT INTO transactions (merchant, amount_hundredths, category_id, date, created_at, updated_at)
-		VALUES ('Netflix', 2299, ?, '2026-08-15', '2026-08-15T12:00:00.000Z', '2026-08-15T12:00:00.000Z')
-	`, cat.ID)
+		INSERT INTO transactions (merchant, date, created_at, updated_at)
+		VALUES ('Netflix', '2026-08-15', '2026-08-15T12:00:00.000Z', '2026-08-15T12:00:00.000Z')
+	`)
 	if err != nil {
 		t.Fatalf("insert transaction error = %v", err)
 	}
 	txnID, _ := resInsert.LastInsertId()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+		VALUES (?, ?, 2299)
+	`, txnID, cat.ID); err != nil {
+		t.Fatalf("insert transaction allocation error = %v", err)
+	}
 
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO recurring_transaction_runs (recurring_transaction_id, month, transaction_id)

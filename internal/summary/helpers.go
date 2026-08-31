@@ -162,9 +162,10 @@ func loadMonthBudgets(ctx context.Context, tx *sql.Tx, month string) (map[int64]
 
 func addMonthSpending(ctx context.Context, tx *sql.Tx, startDate, endDate string, amounts map[int64]*categoryAmounts) (int64, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT t.category_id, c.name, t.amount_hundredths
-		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id
+		SELECT a.category_id, c.name, a.amount_hundredths
+		FROM transaction_allocations AS a
+		INNER JOIN transactions AS t ON t.id = a.transaction_id
+		INNER JOIN categories AS c ON c.id = a.category_id
 		WHERE t.date >= ? AND t.date <= ?
 	`, startDate, endDate)
 	if err != nil {
@@ -262,9 +263,10 @@ func loadCategoryBudget(ctx context.Context, tx *sql.Tx, month string, categoryI
 
 func loadCategorySpending(ctx context.Context, tx *sql.Tx, categoryID int64, startDate, endDate string) (int64, int64, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT amount_hundredths
-		FROM transactions
-		WHERE category_id = ? AND date >= ? AND date <= ?
+		SELECT a.amount_hundredths
+		FROM transaction_allocations AS a
+		INNER JOIN transactions AS t ON t.id = a.transaction_id
+		WHERE a.category_id = ? AND t.date >= ? AND t.date <= ?
 	`, categoryID, startDate, endDate)
 	if err != nil {
 		return 0, 0, err

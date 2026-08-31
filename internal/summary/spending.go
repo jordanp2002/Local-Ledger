@@ -140,9 +140,10 @@ func (s *Store) spending(ctx context.Context, in validatedSpending) (SpendingRes
 
 	where, args := spendingFilter(in.startDate, in.endDate, categoryID, in.merchant)
 	rows, err := tx.QueryContext(ctx, `
-		SELECT t.category_id, c.name, t.amount_hundredths
-		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id`+where, args...)
+		SELECT t.id, a.category_id, c.name, a.amount_hundredths
+		FROM transaction_allocations AS a
+		INNER JOIN transactions AS t ON t.id = a.transaction_id
+		INNER JOIN categories AS c ON c.id = a.category_id`+where, args...)
 	if err != nil {
 		return SpendingResult{}, nil, err
 	}
@@ -151,11 +152,13 @@ func (s *Store) spending(ctx context.Context, in validatedSpending) (SpendingRes
 	amounts := make(map[int64]*categorySpending)
 	var total int64
 	var count int64
+	seenTransactions := make(map[int64]struct{})
 	for rows.Next() {
+		var transactionID int64
 		var id int64
 		var name string
 		var amount int64
-		if err := rows.Scan(&id, &name, &amount); err != nil {
+		if err := rows.Scan(&transactionID, &id, &name, &amount); err != nil {
 			return SpendingResult{}, nil, err
 		}
 		next, ok := checkedAdd(total, amount)
@@ -163,7 +166,10 @@ func (s *Store) spending(ctx context.Context, in validatedSpending) (SpendingRes
 			return SpendingResult{}, nil, fmtOverflow("spending")
 		}
 		total = next
-		count++
+		if _, seen := seenTransactions[transactionID]; !seen {
+			seenTransactions[transactionID] = struct{}{}
+			count++
+		}
 		row, exists := amounts[id]
 		if !exists {
 			row = &categorySpending{name: name}
@@ -237,7 +243,7 @@ func spendingFilter(startDate, endDate *string, categoryID *int64, merchant *str
 		args = append(args, *endDate)
 	}
 	if categoryID != nil {
-		clauses = append(clauses, "t.category_id = ?")
+		clauses = append(clauses, "a.category_id = ?")
 		args = append(args, *categoryID)
 	}
 	if merchant != nil {

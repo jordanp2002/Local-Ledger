@@ -278,7 +278,7 @@ func TestListTrimsASCIICategoryWhitespaceAndPreservesUnicode(t *testing.T) {
 	const nbsp = "\u00a0"
 
 	trimmed := mustList(t, ctx, store, transaction.ListInput{Category: stringPtr(" \t\n\r\v\fGroceries \t\n\r\v\f")})
-	if trimmed.Page.Total != 1 || trimmed.Transactions[0].ID != stored.ID || trimmed.Transactions[0].Category != "Groceries" {
+	if trimmed.Page.Total != 1 || trimmed.Transactions[0].ID != stored.ID || transactionCategory(trimmed.Transactions[0]) != "Groceries" {
 		t.Fatalf("ASCII-trimmed category list = %#v, want stored Groceries row", trimmed)
 	}
 

@@ -27,10 +27,85 @@ func (s *Store) PreviewDue(ctx context.Context) (PreviewDueResult, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	return calculateDue(ctx, tx, s.Now())
+	now := s.Now()
+	return calculateDue(ctx, tx, now)
 }
 
 func calculateDue(ctx context.Context, q queryer, now time.Time) (PreviewDueResult, error) {
+	schedule, err := calculateSchedule(ctx, q, now)
+	if err != nil {
+		return PreviewDueResult{}, err
+	}
+
+	dueTransactions := make([]contract.DueTransaction, 0)
+	blocked := make([]contract.BlockedDueTransaction, 0)
+	var totalHundredths int64
+	for _, item := range schedule.items {
+		if !item.due {
+			continue
+		}
+		if item.categoryActive {
+			amount, err := contract.FormatAmount(item.amountHundredths)
+			if err != nil {
+				return PreviewDueResult{}, err
+			}
+			var ok bool
+			totalHundredths, ok = checkedAdd(totalHundredths, item.amountHundredths)
+			if !ok {
+				return PreviewDueResult{}, errors.New("amount overflow")
+			}
+			dueTransactions = append(dueTransactions, contract.DueTransaction{
+				RecurringTransactionID: item.id,
+				Merchant:               item.merchant,
+				Amount:                 amount,
+				CategoryID:             item.categoryID,
+				Category:               item.categoryName,
+				DueDate:                item.scheduledDate,
+				Note:                   item.note,
+			})
+			continue
+		}
+		blocked = append(blocked, contract.BlockedDueTransaction{
+			RecurringTransactionID: item.id,
+			Merchant:               item.merchant,
+			Category:               item.categoryName,
+			DueDate:                item.scheduledDate,
+			Reason:                 "category_inactive",
+		})
+	}
+
+	totalAmount, err := contract.FormatAmount(totalHundredths)
+	if err != nil {
+		return PreviewDueResult{}, err
+	}
+	return PreviewDueResult{
+		AsOfDate:        schedule.asOfDate,
+		Month:           schedule.month,
+		TotalAmount:     totalAmount,
+		DueTransactions: dueTransactions,
+		Blocked:         blocked,
+	}, nil
+}
+
+type scheduledRecurring struct {
+	id               int64
+	merchant         string
+	amountHundredths int64
+	categoryID       int64
+	categoryName     string
+	categoryActive   bool
+	scheduledDate    string
+	note             *string
+	due              bool
+}
+
+type recurringSchedule struct {
+	asOfDate string
+	month    string
+	items    []scheduledRecurring
+}
+
+func calculateSchedule(ctx context.Context, q queryer, now time.Time) (recurringSchedule, error) {
 	year, month, day := now.Date()
 	monthStr := fmt.Sprintf("%04d-%02d", year, month)
 	asOfDate := fmt.Sprintf("%04d-%02d-%02d", year, month, day)
@@ -57,120 +132,131 @@ func calculateDue(ctx context.Context, q queryer, now time.Time) (PreviewDueResu
 		  )
 	`, monthStr)
 	if err != nil {
-		return PreviewDueResult{}, err
+		return recurringSchedule{}, err
 	}
 	defer rows.Close()
 
-	dueTransactions := make([]contract.DueTransaction, 0)
-	blocked := make([]contract.BlockedDueTransaction, 0)
-	var totalHundredths int64 = 0
-
+	items := make([]scheduledRecurring, 0)
 	for rows.Next() {
 		var (
-			id               int64
-			merchant         string
-			amountHundredths int64
-			categoryID       int64
-			categoryName     string
-			categoryActive   int64
-			dayOfMonth       int64
-			note             sql.NullString
+			item           scheduledRecurring
+			categoryActive int64
+			dayOfMonth     int64
+			note           sql.NullString
 		)
 		if err := rows.Scan(
-			&id,
-			&merchant,
-			&amountHundredths,
-			&categoryID,
-			&categoryName,
+			&item.id,
+			&item.merchant,
+			&item.amountHundredths,
+			&item.categoryID,
+			&item.categoryName,
 			&categoryActive,
 			&dayOfMonth,
 			&note,
 		); err != nil {
-			return PreviewDueResult{}, err
+			return recurringSchedule{}, err
 		}
-
+		item.categoryActive = categoryActive == 1
 		effectiveDay := int(dayOfMonth)
 		if effectiveDay > daysInMonth {
 			effectiveDay = daysInMonth
 		}
-		if effectiveDay > day {
-			continue
+		item.scheduledDate = fmt.Sprintf("%04d-%02d-%02d", year, month, effectiveDay)
+		item.due = effectiveDay <= day
+		if note.Valid {
+			item.note = &note.String
 		}
-
-		dueDate := fmt.Sprintf("%04d-%02d-%02d", year, month, effectiveDay)
-
-		if categoryActive == 1 {
-			amountStr, err := contract.FormatAmount(amountHundredths)
-			if err != nil {
-				return PreviewDueResult{}, err
-			}
-			var ok bool
-			totalHundredths, ok = checkedAdd(totalHundredths, amountHundredths)
-			if !ok {
-				return PreviewDueResult{}, errors.New("amount overflow")
-			}
-			var notePtr *string
-			if note.Valid {
-				notePtr = &note.String
-			}
-			dueTransactions = append(dueTransactions, contract.DueTransaction{
-				RecurringTransactionID: id,
-				Merchant:               merchant,
-				Amount:                 amountStr,
-				CategoryID:             categoryID,
-				Category:               categoryName,
-				DueDate:                dueDate,
-				Note:                   notePtr,
-			})
-		} else {
-			blocked = append(blocked, contract.BlockedDueTransaction{
-				RecurringTransactionID: id,
-				Merchant:               merchant,
-				Category:               categoryName,
-				DueDate:                dueDate,
-				Reason:                 "category_inactive",
-			})
-		}
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return PreviewDueResult{}, err
+		return recurringSchedule{}, err
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].scheduledDate != items[j].scheduledDate {
+			return items[i].scheduledDate < items[j].scheduledDate
+		}
+		leftKey := asciiNoCase(items[i].merchant)
+		rightKey := asciiNoCase(items[j].merchant)
+		if leftKey != rightKey {
+			return leftKey < rightKey
+		}
+		return items[i].id < items[j].id
+	})
+	return recurringSchedule{asOfDate: asOfDate, month: monthStr, items: items}, nil
+}
+
+// PreviewUpcoming returns all active, unmaterialized templates scheduled this month.
+func (s *Store) PreviewUpcoming(ctx context.Context) (PreviewUpcomingResult, error) {
+	if s == nil || s.DB == nil {
+		return PreviewUpcomingResult{}, errors.New("recurring store database is nil")
+	}
+	if s.Now == nil {
+		return PreviewUpcomingResult{}, errors.New("recurring store clock is nil")
 	}
 
-	sort.Slice(dueTransactions, func(i, j int) bool {
-		if dueTransactions[i].DueDate != dueTransactions[j].DueDate {
-			return dueTransactions[i].DueDate < dueTransactions[j].DueDate
-		}
-		leftKey := asciiNoCase(dueTransactions[i].Merchant)
-		rightKey := asciiNoCase(dueTransactions[j].Merchant)
-		if leftKey != rightKey {
-			return leftKey < rightKey
-		}
-		return dueTransactions[i].RecurringTransactionID < dueTransactions[j].RecurringTransactionID
-	})
-
-	sort.Slice(blocked, func(i, j int) bool {
-		if blocked[i].DueDate != blocked[j].DueDate {
-			return blocked[i].DueDate < blocked[j].DueDate
-		}
-		leftKey := asciiNoCase(blocked[i].Merchant)
-		rightKey := asciiNoCase(blocked[j].Merchant)
-		if leftKey != rightKey {
-			return leftKey < rightKey
-		}
-		return blocked[i].RecurringTransactionID < blocked[j].RecurringTransactionID
-	})
-
-	totalAmountStr, err := contract.FormatAmount(totalHundredths)
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return PreviewDueResult{}, err
+		return PreviewUpcomingResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := s.Now()
+	schedule, err := calculateSchedule(ctx, tx, now)
+	if err != nil {
+		return PreviewUpcomingResult{}, err
 	}
 
-	return PreviewDueResult{
-		AsOfDate:        asOfDate,
-		Month:           monthStr,
-		TotalAmount:     totalAmountStr,
-		DueTransactions: dueTransactions,
-		Blocked:         blocked,
+	upcoming := make([]contract.UpcomingTransaction, 0, len(schedule.items))
+	blocked := make([]contract.BlockedDueTransaction, 0)
+	var totalHundredths int64
+	for _, item := range schedule.items {
+		if !item.categoryActive {
+			blocked = append(blocked, contract.BlockedDueTransaction{
+				RecurringTransactionID: item.id,
+				Merchant:               item.merchant,
+				Category:               item.categoryName,
+				DueDate:                item.scheduledDate,
+				Reason:                 "category_inactive",
+			})
+			continue
+		}
+		amount, err := contract.FormatAmount(item.amountHundredths)
+		if err != nil {
+			return PreviewUpcomingResult{}, err
+		}
+		var ok bool
+		totalHundredths, ok = checkedAdd(totalHundredths, item.amountHundredths)
+		if !ok {
+			return PreviewUpcomingResult{}, errors.New("amount overflow")
+		}
+		status := "scheduled"
+		if item.due {
+			status = "due"
+		}
+		upcoming = append(upcoming, contract.UpcomingTransaction{
+			RecurringTransactionID: item.id,
+			Merchant:               item.merchant,
+			Amount:                 amount,
+			CategoryID:             item.categoryID,
+			Category:               item.categoryName,
+			ScheduledDate:          item.scheduledDate,
+			Status:                 status,
+			Note:                   item.note,
+		})
+	}
+	totalAmount, err := contract.FormatAmount(totalHundredths)
+	if err != nil {
+		return PreviewUpcomingResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return PreviewUpcomingResult{}, err
+	}
+	return PreviewUpcomingResult{
+		AsOfDate:             schedule.asOfDate,
+		Month:                schedule.month,
+		TotalAmount:          totalAmount,
+		UpcomingTransactions: upcoming,
+		Blocked:              blocked,
 	}, nil
 }
 

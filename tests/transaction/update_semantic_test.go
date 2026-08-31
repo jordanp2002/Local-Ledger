@@ -465,8 +465,8 @@ func TestUpdateOmittedCategoryIsNotSemanticError(t *testing.T) {
 	seeded := seedGroceryTransaction(t, ctx, store)
 
 	result := mustUpdate(t, ctx, store, transaction.UpdateInput{ID: seeded.ID, Amount: stringPtr("21.00")})
-	if result.Transaction.Category != "Groceries" {
-		t.Fatalf("omitted category changed stored category to %q", result.Transaction.Category)
+	if transactionCategory(result.Transaction) != "Groceries" {
+		t.Fatalf("omitted category changed stored category to %q", transactionCategory(result.Transaction))
 	}
 }
 
@@ -603,8 +603,8 @@ func TestUpdateDoesNotFoldUnicodeBeyondSQLiteNoCase(t *testing.T) {
 	if result.Transaction.Merchant != "CAFÉ" {
 		t.Fatalf("updated merchant = %q, want CAFÉ", result.Transaction.Merchant)
 	}
-	if result.Transaction.Category != "Groceries" {
-		t.Fatalf("ASCII-folded category = %q, want stored Groceries", result.Transaction.Category)
+	if transactionCategory(result.Transaction) != "Groceries" {
+		t.Fatalf("ASCII-folded category = %q, want stored Groceries", transactionCategory(result.Transaction))
 	}
 	if got := countMappings(t, ctx, db); got != 1 {
 		t.Fatalf("mapping count = %d, want 1", got)

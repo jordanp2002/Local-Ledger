@@ -95,12 +95,12 @@ func TestMaterializeDueMultipleRowsSuccessAndOrdering(t *testing.T) {
 	}
 
 	rent := res.Transactions[0]
-	if rent.Merchant != "Rent" || rent.Amount != "1500.00" || rent.Date != "2026-08-01" || rent.CategoryID != catHousing.ID || rent.Category != "Housing" || rent.Note != nil {
+	if rent.Merchant != "Rent" || rent.Amount != "1500.00" || rent.Date != "2026-08-01" || rent.CategoryID == nil || *rent.CategoryID != catHousing.ID || rent.Category == nil || *rent.Category != "Housing" || rent.Note != nil {
 		t.Errorf("rent = %+v", rent)
 	}
 
 	netflix := res.Transactions[1]
-	if netflix.Merchant != "Netflix" || netflix.Amount != "22.99" || netflix.Date != "2026-08-15" || netflix.CategoryID != catEnt.ID || netflix.Category != "Entertainment" {
+	if netflix.Merchant != "Netflix" || netflix.Amount != "22.99" || netflix.Date != "2026-08-15" || netflix.CategoryID == nil || *netflix.CategoryID != catEnt.ID || netflix.Category == nil || *netflix.Category != "Entertainment" {
 		t.Errorf("netflix = %+v", netflix)
 	}
 	if netflix.Note == nil || *netflix.Note != "Monthly subscription" {

@@ -60,7 +60,7 @@ func TestAddBatchRecordsMixedRowsInInputOrder(t *testing.T) {
 	if first.Transaction.Merchant != "Metro" || first.Transaction.Amount != "24.18" || first.Transaction.Date != "2026-08-18" {
 		t.Fatalf("row 0 transaction = %#v", first.Transaction)
 	}
-	if first.Transaction.CategoryID != groceries.ID || first.Transaction.Category != "Groceries" {
+	if transactionCategoryID(first.Transaction) != groceries.ID || transactionCategory(first.Transaction) != "Groceries" {
 		t.Fatalf("row 0 category = %#v, want Groceries", first.Transaction)
 	}
 	if first.Transaction.Note == nil || *first.Transaction.Note != "Imported from statement screenshot" {
@@ -71,7 +71,7 @@ func TestAddBatchRecordsMixedRowsInInputOrder(t *testing.T) {
 	if second.CategorySource != transaction.CategorySourceProvided || second.MerchantMappingAction != transaction.MappingActionCreated {
 		t.Fatalf("row 1 flags = (%q, %q)", second.CategorySource, second.MerchantMappingAction)
 	}
-	if second.Transaction.Merchant != "Netflix" || second.Transaction.CategoryID != entertainment.ID {
+	if second.Transaction.Merchant != "Netflix" || transactionCategoryID(second.Transaction) != entertainment.ID {
 		t.Fatalf("row 1 transaction = %#v", second.Transaction)
 	}
 
@@ -79,7 +79,7 @@ func TestAddBatchRecordsMixedRowsInInputOrder(t *testing.T) {
 	if third.CategorySource != transaction.CategorySourceKnownMerchant || third.MerchantMappingAction != transaction.MappingActionMatched {
 		t.Fatalf("row 2 flags = (%q, %q), want later row to use earlier Metro mapping", third.CategorySource, third.MerchantMappingAction)
 	}
-	if third.Transaction.Merchant != "metro" || third.Transaction.CategoryID != groceries.ID || third.Transaction.Date != "2026-08-16" {
+	if third.Transaction.Merchant != "metro" || transactionCategoryID(third.Transaction) != groceries.ID || third.Transaction.Date != "2026-08-16" {
 		t.Fatalf("row 2 transaction = %#v", third.Transaction)
 	}
 

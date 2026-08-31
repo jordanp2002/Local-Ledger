@@ -232,9 +232,10 @@ func loadSeriesMonth(ctx context.Context, tx *sql.Tx, month string, categoryID *
 
 func loadUnfilteredSeriesSpending(ctx context.Context, tx *sql.Tx, startDate, endDate string) (int64, int64, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT amount_hundredths
-		FROM transactions
-		WHERE date >= ? AND date <= ?
+		SELECT a.transaction_id, a.amount_hundredths
+		FROM transaction_allocations AS a
+		INNER JOIN transactions AS t ON t.id = a.transaction_id
+		WHERE t.date >= ? AND t.date <= ?
 	`, startDate, endDate)
 	if err != nil {
 		return 0, 0, err
@@ -243,9 +244,11 @@ func loadUnfilteredSeriesSpending(ctx context.Context, tx *sql.Tx, startDate, en
 
 	var total int64
 	var count int64
+	seenTransactions := make(map[int64]struct{})
 	for rows.Next() {
+		var transactionID int64
 		var amount int64
-		if err := rows.Scan(&amount); err != nil {
+		if err := rows.Scan(&transactionID, &amount); err != nil {
 			return 0, 0, err
 		}
 		next, ok := checkedAdd(total, amount)
@@ -253,10 +256,13 @@ func loadUnfilteredSeriesSpending(ctx context.Context, tx *sql.Tx, startDate, en
 			return 0, 0, fmtOverflow("spending")
 		}
 		total = next
-		if count == math.MaxInt64 {
-			return 0, 0, fmtOverflow("transaction count")
+		if _, seen := seenTransactions[transactionID]; !seen {
+			if count == math.MaxInt64 {
+				return 0, 0, fmtOverflow("transaction count")
+			}
+			seenTransactions[transactionID] = struct{}{}
+			count++
 		}
-		count++
 	}
 	if err := rows.Err(); err != nil {
 		return 0, 0, err

@@ -338,9 +338,10 @@ func snapshotMerchantRemovalState(t *testing.T, ctx context.Context, db *sql.DB)
 	}
 
 	transactionRows, err := db.QueryContext(ctx, `
-		SELECT t.id, t.merchant, t.amount_hundredths, t.date, t.category_id, c.name, t.note, t.created_at, t.updated_at
+		SELECT t.id, t.merchant, a.amount_hundredths, t.date, a.category_id, c.name, t.note, t.created_at, t.updated_at
 		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		INNER JOIN categories AS c ON c.id = a.category_id
 		ORDER BY t.id ASC
 	`)
 	if err != nil {
@@ -378,15 +379,21 @@ func assertMerchantRemovalStateUnchanged(t *testing.T, ctx context.Context, db *
 func insertMerchantTransaction(t *testing.T, ctx context.Context, db *sql.DB, merchantName string, categoryID int64) int64 {
 	t.Helper()
 	result, err := db.ExecContext(ctx, `
-		INSERT INTO transactions (merchant, amount_hundredths, date, category_id)
-		VALUES (?, ?, ?, ?)
-	`, merchantName, 1250, "2026-08-14", categoryID)
+		INSERT INTO transactions (merchant, date)
+		VALUES (?, ?)
+	`, merchantName, "2026-08-14")
 	if err != nil {
 		t.Fatalf("insert transaction: %v", err)
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
 		t.Fatalf("transaction LastInsertId: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths)
+		VALUES (?, ?, ?)
+	`, id, categoryID, 1250); err != nil {
+		t.Fatalf("insert transaction allocation: %v", err)
 	}
 	return id
 }

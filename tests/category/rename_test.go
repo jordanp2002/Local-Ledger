@@ -39,7 +39,12 @@ func TestRenamePreservesCategoryIdentityAndRelatedRows(t *testing.T) {
 
 	var gotTransactionID, gotTransactionCategoryID int64
 	var gotMerchant string
-	if err := store.DB.QueryRowContext(ctx, `SELECT id, merchant, category_id FROM transactions WHERE id = ?`, transactionID).Scan(&gotTransactionID, &gotMerchant, &gotTransactionCategoryID); err != nil {
+	if err := store.DB.QueryRowContext(ctx, `
+		SELECT t.id, t.merchant, a.category_id
+		FROM transactions AS t
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		WHERE t.id = ?
+	`, transactionID).Scan(&gotTransactionID, &gotMerchant, &gotTransactionCategoryID); err != nil {
 		t.Fatalf("load transaction: %v", err)
 	}
 	if gotTransactionID != transactionID || gotMerchant != "Restaurant" || gotTransactionCategoryID != dining.ID {

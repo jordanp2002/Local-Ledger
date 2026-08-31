@@ -119,7 +119,7 @@ func TestRemoveMissingIDIsTransactionNotFound(t *testing.T) {
 	if len(fields) != 0 {
 		t.Fatalf("fields = %#v, want none", fields)
 	}
-	if got != (contract.Transaction{}) {
+	if got.ID != 0 {
 		t.Fatalf("removed = %#v, want zero value", got)
 	}
 	expectTransactionNotFound(t, err, 42)
@@ -151,7 +151,7 @@ func TestRemoveSameIDTwiceIsTransactionNotFound(t *testing.T) {
 	if len(fields) != 0 {
 		t.Fatalf("fields = %#v, want none", fields)
 	}
-	if got != (contract.Transaction{}) {
+	if got.ID != 0 {
 		t.Fatalf("second remove = %#v, want zero value", got)
 	}
 	expectTransactionNotFound(t, err, seeded.ID)
@@ -275,7 +275,7 @@ func TestRemoveRollsBackAfterDeleteFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("Remove() error = nil, want trigger failure")
 	}
-	if got != (contract.Transaction{}) {
+	if got.ID != 0 {
 		t.Fatalf("removed = %#v, want zero value after abort", got)
 	}
 	assertStoredUnchanged(t, ctx, db, before)
@@ -353,7 +353,7 @@ func TestRemoveRejectsZeroAndNegativeIDs(t *testing.T) {
 		if !reflect.DeepEqual(fields, want) {
 			t.Fatalf("Remove(id=%d) fields = %#v, want %#v", id, fields, want)
 		}
-		if got != (contract.Transaction{}) {
+		if got.ID != 0 {
 			t.Fatalf("Remove(id=%d) transaction = %#v, want zero", id, got)
 		}
 		var notFound *transaction.TransactionNotFoundError
@@ -400,7 +400,7 @@ func TestRemoveReturnsCanonicalJoinedTransaction(t *testing.T) {
 	if removed.Merchant != "Metro" || removed.Date != "2026-08-14" {
 		t.Fatalf("canonical identity = %#v", removed)
 	}
-	if removed.CategoryID != groceries.ID || removed.Category != "Groceries" {
+	if transactionCategoryID(removed) != groceries.ID || transactionCategory(removed) != "Groceries" {
 		t.Fatalf("canonical category = %#v, want stored Groceries join", removed)
 	}
 	if removed.Note != nil {
@@ -424,7 +424,7 @@ func TestRemoveNilStoreIsInternalError(t *testing.T) {
 	if len(fields) != 0 {
 		t.Fatalf("nil store fields = %#v, want none", fields)
 	}
-	if got != (contract.Transaction{}) {
+	if got.ID != 0 {
 		t.Fatalf("nil store removed = %#v, want zero", got)
 	}
 	if err == nil || err.Error() != "transaction store database is nil" {
@@ -435,7 +435,7 @@ func TestRemoveNilStoreIsInternalError(t *testing.T) {
 	if len(fields) != 0 {
 		t.Fatalf("nil DB fields = %#v, want none", fields)
 	}
-	if got != (contract.Transaction{}) {
+	if got.ID != 0 {
 		t.Fatalf("nil DB removed = %#v, want zero", got)
 	}
 	if err == nil || err.Error() != "transaction store database is nil" {

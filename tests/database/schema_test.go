@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -62,14 +62,14 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if !hasIndexSignature(indexes["budgets"], schemaIndexColumn{name: "month"}) {
 		t.Fatalf("budgets is missing its month query index: %v", indexes["budgets"])
 	}
-	if countNonConstraintIndexes(indexes["transactions"]) != 2 {
-		t.Fatalf("transactions non-constraint index count = %d, want 2", countNonConstraintIndexes(indexes["transactions"]))
+	if countNonConstraintIndexes(indexes["transactions"]) != 1 {
+		t.Fatalf("transactions non-constraint index count = %d, want 1", countNonConstraintIndexes(indexes["transactions"]))
 	}
 	if !hasIndexSignature(indexes["transactions"], schemaIndexColumn{name: "date", descending: true}, schemaIndexColumn{name: "id", descending: true}) {
 		t.Fatalf("transactions is missing its date/id query index: %v", indexes["transactions"])
 	}
-	if !hasIndexSignature(indexes["transactions"], schemaIndexColumn{name: "category_id"}, schemaIndexColumn{name: "date", descending: true}, schemaIndexColumn{name: "id", descending: true}) {
-		t.Fatalf("transactions is missing its category/date/id query index: %v", indexes["transactions"])
+	if countNonConstraintIndexes(indexes["transaction_allocations"]) != 1 || !hasIndexSignature(indexes["transaction_allocations"], schemaIndexColumn{name: "category_id"}, schemaIndexColumn{name: "transaction_id"}) {
+		t.Fatalf("transaction_allocations is missing its category/transaction query index: %v", indexes["transaction_allocations"])
 	}
 	if countNonConstraintIndexes(indexes["known_merchants"]) != 0 {
 		t.Fatalf("known_merchants has a speculative non-constraint index: %v", indexes["known_merchants"])
@@ -103,10 +103,11 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	wantForeignKeys := map[string]bool{
 		"categories":                 false,
 		"budgets":                    true,
-		"transactions":               true,
+		"transactions":               false,
 		"known_merchants":            true,
 		"recurring_transactions":     true,
 		"recurring_transaction_runs": true,
+		"transaction_allocations":    true,
 		"transaction_imports":        false,
 		"transaction_import_items":   true,
 		"transaction_idempotency":    true,
@@ -126,6 +127,10 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		}
 		if table == "recurring_transaction_runs" {
 			assertRecurringRunForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "transaction_allocations" {
+			assertAllocationForeignKeys(t, foreignKeys)
 			continue
 		}
 		if !wantForeignKeys[table] {
@@ -181,11 +186,19 @@ func TestSchemaAcceptsValidRowsAndAppliesDefaults(t *testing.T) {
 		id    int64
 	}{
 		{table: "budgets", id: budgetID},
-		{table: "transactions", id: transactionID},
+		{table: "transaction_allocations", id: transactionID},
 	} {
 		var storageType string
-		query := fmt.Sprintf("SELECT typeof(amount_hundredths) FROM %s WHERE id = ?", record.table)
-		if err := db.QueryRowContext(ctx, query, record.id).Scan(&storageType); err != nil {
+		query := "SELECT typeof(amount_hundredths) FROM " + record.table
+		var queryID int64
+		if record.table == "transaction_allocations" {
+			query += " WHERE transaction_id = ?"
+			queryID = record.id
+		} else {
+			query += " WHERE id = ?"
+			queryID = record.id
+		}
+		if err := db.QueryRowContext(ctx, query, queryID).Scan(&storageType); err != nil {
 			t.Fatalf("query %s amount storage type: %v", record.table, err)
 		}
 		if storageType != "integer" {
@@ -268,12 +281,25 @@ func TestSchemaEnforcesAmountStorageAndSign(t *testing.T) {
 	expectExecError(t, ctx, db, "INSERT INTO budgets (category_id, month, amount_hundredths) VALUES (?, ?, CAST(? AS TEXT))", categoryID, "2026-12", "not-an-integer")
 
 	positiveTransactionID := insertTransaction(t, ctx, db, "Metro", 1, "2026-08-14", categoryID)
-	assertAmountStorageType(t, ctx, db, "transactions", positiveTransactionID, "integer")
-	expectExecError(t, ctx, db, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, ?, ?, ?)", "Zero", 0, "2026-08-14", categoryID)
-	expectExecError(t, ctx, db, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, ?, ?, ?)", "Negative", -1, "2026-08-14", categoryID)
-	expectExecError(t, ctx, db, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, CAST(? AS REAL), ?, ?)", "Real", 12.5, "2026-08-14", categoryID)
-	expectExecError(t, ctx, db, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, CAST(? AS TEXT), ?, ?)", "TextDecimal", "12.5", "2026-08-14", categoryID)
-	expectExecError(t, ctx, db, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, CAST(? AS TEXT), ?, ?)", "TextNonInteger", "not-an-integer", "2026-08-14", categoryID)
+	assertAmountStorageType(t, ctx, db, "transaction_allocations", positiveTransactionID, "integer")
+	for _, value := range []struct {
+		name  string
+		query string
+		arg   any
+	}{
+		{name: "zero", query: "?", arg: 0},
+		{name: "negative", query: "?", arg: -1},
+		{name: "real", query: "CAST(? AS REAL)", arg: 12.5},
+		{name: "text decimal", query: "CAST(? AS TEXT)", arg: "12.5"},
+		{name: "text non-integer", query: "CAST(? AS TEXT)", arg: "not-an-integer"},
+	} {
+		result, err := db.ExecContext(ctx, "INSERT INTO transactions (merchant, date) VALUES (?, ?)", value.name, "2026-08-14")
+		if err != nil {
+			t.Fatalf("insert %s transaction: %v", value.name, err)
+		}
+		id := lastInsertID(t, result, value.name+" transaction")
+		expectExecError(t, ctx, db, "INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths) VALUES (?, ?, "+value.query+")", id, categoryID, value.arg)
+	}
 }
 
 func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
@@ -302,8 +328,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 4 {
-		t.Fatalf("reopened user_version = %d, want 4", version)
+	if version != 5 {
+		t.Fatalf("reopened user_version = %d, want 5", version)
 	}
 
 	var categoryName string
@@ -325,7 +351,12 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 
 	var transactionMerchant, transactionDate string
 	var transactionAmount, transactionCategoryID int64
-	if err := reopened.QueryRowContext(ctx, "SELECT merchant, amount_hundredths, date, category_id FROM transactions WHERE id = ?", transactionID).Scan(&transactionMerchant, &transactionAmount, &transactionDate, &transactionCategoryID); err != nil {
+	if err := reopened.QueryRowContext(ctx, `
+		SELECT t.merchant, a.amount_hundredths, t.date, a.category_id
+		FROM transactions AS t
+		INNER JOIN transaction_allocations AS a ON a.transaction_id = t.id
+		WHERE t.id = ?
+	`, transactionID).Scan(&transactionMerchant, &transactionAmount, &transactionDate, &transactionCategoryID); err != nil {
 		t.Fatalf("query reopened transaction: %v", err)
 	}
 	if transactionMerchant != "Metro" || transactionAmount != 1250 || transactionDate != "2026-08-14" || transactionCategoryID != categoryID {
@@ -576,6 +607,25 @@ func assertIdempotencyForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) 
 	}
 }
 
+func assertAllocationForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 2 {
+		t.Fatalf("transaction_allocations foreign keys = %v, want 2", foreignKeys)
+	}
+	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
+	for _, foreignKey := range foreignKeys {
+		byFrom[foreignKey.from] = foreignKey
+	}
+	transactionFK, ok := byFrom["transaction_id"]
+	if !ok || transactionFK.table != "transactions" || transactionFK.to != "id" || transactionFK.onDelete != "CASCADE" {
+		t.Fatalf("transaction_id foreign key = %v, want transactions(id) ON DELETE CASCADE", transactionFK)
+	}
+	categoryFK, ok := byFrom["category_id"]
+	if !ok || categoryFK.table != "categories" || categoryFK.to != "id" || (categoryFK.onDelete != "RESTRICT" && categoryFK.onDelete != "NO ACTION") {
+		t.Fatalf("category_id foreign key = %v, want categories(id) with restrictive delete", categoryFK)
+	}
+}
+
 func quotePragmaArgument(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
@@ -638,11 +688,23 @@ func insertBudget(t *testing.T, ctx context.Context, db *sql.DB, categoryID int6
 
 func insertTransaction(t *testing.T, ctx context.Context, db *sql.DB, merchant string, amount int64, date string, categoryID int64) int64 {
 	t.Helper()
-	result, err := db.ExecContext(ctx, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, ?, ?, ?)", merchant, amount, date, categoryID)
+	var result sql.Result
+	var err error
+	if tableExists(t, db, "transaction_allocations") {
+		result, err = db.ExecContext(ctx, "INSERT INTO transactions (merchant, date) VALUES (?, ?)", merchant, date)
+	} else {
+		result, err = db.ExecContext(ctx, "INSERT INTO transactions (merchant, amount_hundredths, date, category_id) VALUES (?, ?, ?, ?)", merchant, amount, date, categoryID)
+	}
 	if err != nil {
 		t.Fatalf("insert transaction: %v", err)
 	}
-	return lastInsertID(t, result, "transaction")
+	id := lastInsertID(t, result, "transaction")
+	if tableExists(t, db, "transaction_allocations") {
+		if _, err := db.ExecContext(ctx, "INSERT INTO transaction_allocations (transaction_id, category_id, amount_hundredths) VALUES (?, ?, ?)", id, categoryID, amount); err != nil {
+			t.Fatalf("insert transaction allocation: %v", err)
+		}
+	}
+	return id
 }
 
 func insertKnownMerchant(t *testing.T, ctx context.Context, db *sql.DB, merchant string, categoryID int64) int64 {
@@ -702,7 +764,11 @@ func assertUTCDefault(t *testing.T, field, value string) {
 func assertAmountStorageType(t *testing.T, ctx context.Context, db *sql.DB, table string, id int64, want string) {
 	t.Helper()
 	var got string
-	query := fmt.Sprintf("SELECT typeof(amount_hundredths) FROM %s WHERE id = ?", table)
+	column := "id"
+	if table == "transaction_allocations" {
+		column = "transaction_id"
+	}
+	query := fmt.Sprintf("SELECT typeof(amount_hundredths) FROM %s WHERE %s = ?", table, column)
 	if err := db.QueryRowContext(ctx, query, id).Scan(&got); err != nil {
 		t.Fatalf("query %s amount storage type for row %d: %v", table, id, err)
 	}

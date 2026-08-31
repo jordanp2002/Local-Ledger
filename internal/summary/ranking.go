@@ -106,8 +106,9 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 
 	where, args := spendingFilter(in.startDate, in.endDate, categoryID, nil)
 	rows, err := tx.QueryContext(ctx, `
-		SELECT t.merchant, t.amount_hundredths
-		FROM transactions AS t`+where+`
+		SELECT t.id, t.merchant, a.amount_hundredths
+		FROM transaction_allocations AS a
+		INNER JOIN transactions AS t ON t.id = a.transaction_id`+where+`
 		ORDER BY t.date DESC, t.id DESC
 	`, args...)
 	if err != nil {
@@ -118,10 +119,13 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 	byMerchant := make(map[string]*merchantTotals)
 	var total int64
 	var count int64
+	seenTransactions := make(map[int64]struct{})
+	seenByMerchant := make(map[string]map[int64]struct{})
 	for rows.Next() {
+		var transactionID int64
 		var merchant string
 		var amount int64
-		if err := rows.Scan(&merchant, &amount); err != nil {
+		if err := rows.Scan(&transactionID, &merchant, &amount); err != nil {
 			return TopMerchantsResult{}, nil, err
 		}
 
@@ -130,7 +134,10 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 			return TopMerchantsResult{}, nil, fmtOverflow("spending")
 		}
 		total = next
-		count++
+		if _, seen := seenTransactions[transactionID]; !seen {
+			seenTransactions[transactionID] = struct{}{}
+			count++
+		}
 
 		key := merchantNoCaseKey(merchant)
 		group, exists := byMerchant[key]
@@ -143,7 +150,15 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 			return TopMerchantsResult{}, nil, fmtOverflow("spending")
 		}
 		group.total = nextGroupTotal
-		group.count++
+		seen, exists := seenByMerchant[key]
+		if !exists {
+			seen = make(map[int64]struct{})
+			seenByMerchant[key] = seen
+		}
+		if _, exists := seen[transactionID]; !exists {
+			seen[transactionID] = struct{}{}
+			group.count++
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return TopMerchantsResult{}, nil, err

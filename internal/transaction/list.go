@@ -166,8 +166,7 @@ func (s *Store) list(ctx context.Context, in validatedList) (ListResult, []contr
 	pageArgs := append(append([]any(nil), args...), in.limit, in.offset)
 	rows, err := tx.QueryContext(ctx, `
 		SELECT `+transactionColumns+`
-		FROM transactions AS t
-		INNER JOIN categories AS c ON c.id = t.category_id`+where+`
+		FROM transactions AS t`+where+`
 		ORDER BY t.date DESC, t.id DESC
 		LIMIT ? OFFSET ?
 	`, pageArgs...)
@@ -178,7 +177,14 @@ func (s *Store) list(ctx context.Context, in validatedList) (ListResult, []contr
 
 	transactions := make([]contract.Transaction, 0)
 	for rows.Next() {
-		recorded, err := scanTransaction(rows)
+		recorded, err := scanTransactionParent(rows)
+		if err != nil {
+			return ListResult{}, nil, err
+		}
+		allocations, err := loadAllocations(ctx, tx, recorded.ID)
+		if err == nil {
+			recorded, err = withTransactionAllocations(recorded, allocations)
+		}
 		if err != nil {
 			return ListResult{}, nil, err
 		}
@@ -218,7 +224,7 @@ func listFilter(startDate, endDate *string, categoryID *int64, merchant *string)
 		args = append(args, *endDate)
 	}
 	if categoryID != nil {
-		clauses = append(clauses, "t.category_id = ?")
+		clauses = append(clauses, "EXISTS (SELECT 1 FROM transaction_allocations AS af WHERE af.transaction_id = t.id AND af.category_id = ?)")
 		args = append(args, *categoryID)
 	}
 	if merchant != nil {
