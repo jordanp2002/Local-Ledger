@@ -174,8 +174,9 @@ func TestPreviewUpcomingTransactionsSchedulesDueFutureBlockedAndRunExcluded(t *t
 	store, catStore, db := openRecurringStore(t)
 	mustCreateCategory(t, ctx, catStore, "Active")
 	mustCreateCategory(t, ctx, catStore, "Blocked")
+	mustCreateCategory(t, ctx, catStore, "Future Blocked")
 	due := mustCreateRecurring(t, ctx, store, recurring.CreateInput{Merchant: "Rent", Amount: "100.00", Category: "Active", DayOfMonth: 1})
-	future := mustCreateRecurring(t, ctx, store, recurring.CreateInput{Merchant: "Future", Amount: "22.99", Category: "Active", DayOfMonth: 31, Note: stringPointer("later")})
+	future := mustCreateRecurring(t, ctx, store, recurring.CreateInput{Merchant: "Future", Amount: "22.99", Category: "Future Blocked", DayOfMonth: 31, Note: stringPointer("later")})
 	blocked := mustCreateRecurring(t, ctx, store, recurring.CreateInput{Merchant: "Blocked", Amount: "50.00", Category: "Blocked", DayOfMonth: 20})
 	run := mustCreateRecurring(t, ctx, store, recurring.CreateInput{Merchant: "Already", Amount: "5.00", Category: "Active", DayOfMonth: 5})
 	disabled := mustCreateRecurring(t, ctx, store, recurring.CreateInput{Merchant: "Disabled", Amount: "8.00", Category: "Active", DayOfMonth: 8})
@@ -186,6 +187,7 @@ func TestPreviewUpcomingTransactionsSchedulesDueFutureBlockedAndRunExcluded(t *t
 		t.Fatalf("insert run: %v", err)
 	}
 	mustDisableCategory(t, ctx, catStore, "Blocked")
+	mustDisableCategory(t, ctx, catStore, "Future Blocked")
 
 	res, err := store.PreviewUpcoming(ctx)
 	if err != nil {

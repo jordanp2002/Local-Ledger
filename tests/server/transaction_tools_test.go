@@ -58,6 +58,29 @@ func TestAddTransactionToolDiscovery(t *testing.T) {
 	}
 }
 
+func TestAddTransactionAggregateOverflowIsInvalidInput(t *testing.T) {
+	session := connectCategorySession(t, openCategoryDB(t), fixedTransactionNow, nil)
+	createCategoryForMerchantTest(t, session, "Software")
+	budget := callTool(t, session, "create_monthly_budget", map[string]any{
+		"month": "2026-08", "budgets": []map[string]any{{"category": "Software", "amount": "1.00"}},
+	})
+	if budget.IsError {
+		t.Fatalf("create budget: %s", structuredJSON(t, budget))
+	}
+	first := callTool(t, session, "add_transaction", map[string]any{"amount": "0.01", "merchant": "Small", "category": "Software"})
+	if first.IsError {
+		t.Fatalf("add first transaction: %s", structuredJSON(t, first))
+	}
+	overflow := callTool(t, session, "add_transaction", map[string]any{"amount": "92233720368547758.07", "merchant": "Maximum", "category": "Software"})
+	if !overflow.IsError || objectField(t, structuredObject(t, overflow), "error")["code"] != string(contract.ErrorCodeInvalidInput) {
+		t.Fatalf("aggregate overflow: %s", structuredJSON(t, overflow))
+	}
+	listed := callTool(t, session, "list_transactions", map[string]any{})
+	if objectField(t, structuredObject(t, listed), "page")["total"] != float64(1) {
+		t.Fatalf("transactions changed after overflow: %s", structuredJSON(t, listed))
+	}
+}
+
 func TestAddTransactionMappingActions(t *testing.T) {
 	t.Run("created", func(t *testing.T) {
 		db := openCategoryDB(t)
