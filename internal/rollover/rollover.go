@@ -87,6 +87,10 @@ type Conflict struct {
 	EligibleRollover   int64
 }
 
+type OverflowError struct{ Kind string }
+
+func (e *OverflowError) Error() string { return e.Kind + " total overflow" }
+
 // DependencyConflictError identifies every outgoing rollover that must be
 // reduced or removed before a mutation can proceed.
 type DependencyConflictError struct {
@@ -855,7 +859,7 @@ func sumPositive(ctx context.Context, tx *sql.Tx, query string, args ...any) (in
 			return 0, err
 		}
 		if amount < 0 || amount > math.MaxInt64-total {
-			return 0, fmt.Errorf("%s total overflow", kind)
+			return 0, &OverflowError{Kind: kind}
 		}
 		total += amount
 	}
