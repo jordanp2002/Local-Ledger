@@ -9,14 +9,25 @@
 | `rename_category` | Rename a category. |
 | `disable_category` | Disable a category. |
 
-## 2. Set up a monthly budget
+## 2. Set up asset accounts
+
+Asset accounts are local records only. These tools never contact a bank.
+
+| Tool | Use |
+| --- | --- |
+| `create_account` | Create an asset account or reactivate a matching inactive account. |
+| `update_account` | Rename an account or change its note. |
+| `list_accounts` | List and filter accounts with their reported balances. |
+| `disable_account` | Retire an account whose balance is zero without deleting its history. |
+
+## 3. Set up a monthly budget
 
 | Tool | Use |
 | --- | --- |
 | `create_monthly_budget` | Create a month from amounts or an earlier month. |
 | `set_budgets` | Change amounts in an existing month. |
 
-## 3. Set up merchant defaults
+## 4. Set up merchant defaults
 
 | Tool | Use |
 | --- | --- |
@@ -25,7 +36,7 @@
 | `rename_known_merchant` | Rename a merchant default. |
 | `remove_known_merchant` | Remove a merchant default. |
 
-## 4. Record purchases
+## 5. Record purchases
 
 | Tool | Use |
 | --- | --- |
@@ -35,7 +46,7 @@
 | `update_transaction` | Correct a purchase. |
 | `remove_transaction` | Delete a purchase. |
 
-## 5. Review spending
+## 6. Review spending
 
 | Tool | Use |
 | --- | --- |
@@ -46,7 +57,7 @@
 | `compare_months` | Compare two budgeted months. |
 | `get_monthly_series` | Review up to 24 months in order, optionally with one consistently ordered category row per month. |
 
-## 6. Explicit budget rollovers
+## 7. Explicit budget rollovers
 
 | Tool | Use |
 | --- | --- |
@@ -54,7 +65,7 @@
 | `list_budget_rollovers` | Audit rollover sources, amounts, status, and optional transaction links. |
 | `remove_budget_rollover` | Remove one rollover after checking that later dependent rollovers are handled first. |
 
-## 7. Sinking funds
+## 8. Sinking funds
 
 | Tool | Use |
 | --- | --- |

@@ -193,6 +193,57 @@ func TestParseAmountStillRejectsSignedStrings(t *testing.T) {
 	}
 }
 
+func TestParseSignedAmountAcceptsAndNormalizesSignedDecimals(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int64
+	}{
+		{input: "20.5", want: 2050},
+		{input: "0.00", want: 0},
+		{input: "-0.00", want: 0},
+		{input: "-20.5", want: -2050},
+		{input: "92233720368547758.07", want: math.MaxInt64},
+		{input: "-92233720368547758.07", want: -math.MaxInt64},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := contract.ParseSignedAmount(tt.input)
+			if err != nil {
+				t.Fatalf("ParseSignedAmount(%q) error = %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("ParseSignedAmount(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+			formatted, err := contract.FormatSignedAmount(got)
+			if err != nil {
+				t.Fatalf("FormatSignedAmount(%d) error = %v", got, err)
+			}
+			roundTripped, err := contract.ParseSignedAmount(formatted)
+			if err != nil || roundTripped != got {
+				t.Fatalf("signed round trip = %d, %v; want %d", roundTripped, err, got)
+			}
+		})
+	}
+}
+
+func TestParseSignedAmountRejectsInvalidAndOverflowingDecimals(t *testing.T) {
+	for _, input := range []string{
+		"",
+		"+20.00",
+		"-",
+		"-20.000",
+		"-92233720368547758.08",
+		"92233720368547758.08",
+	} {
+		t.Run(input, func(t *testing.T) {
+			if got, err := contract.ParseSignedAmount(input); err == nil {
+				t.Fatalf("ParseSignedAmount(%q) = %d, nil error; want rejection", input, got)
+			}
+		})
+	}
+}
+
 func TestFormatAmountRoundTripsThroughParseAmount(t *testing.T) {
 	tests := []int64{0, 1, 7, 50, 99, 100, 2050, 123456789, math.MaxInt64}
 

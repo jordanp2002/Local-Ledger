@@ -53,6 +53,36 @@ func ParseAmount(value string) (int64, error) {
 	return whole*100 + fraction, nil
 }
 
+// ParseSignedAmount converts an optional-minus decimal with up to two
+// fractional digits into integer hundredths. It reuses ParseAmount for the
+// magnitude so grammar and overflow stay consistent. The supported range is
+// [-MaxInt64, MaxInt64]; MinInt64 is rejected because it cannot round-trip
+// through FormatSignedAmount.
+func ParseSignedAmount(value string) (int64, error) {
+	if value == "" {
+		return 0, ErrInvalidAmount
+	}
+	neg := false
+	magnitude := value
+	if strings.HasPrefix(value, "-") {
+		neg = true
+		magnitude = value[1:]
+		if magnitude == "" {
+			return 0, ErrInvalidAmount
+		}
+	} else if strings.HasPrefix(value, "+") {
+		return 0, ErrInvalidAmount
+	}
+	parsed, err := ParseAmount(magnitude)
+	if err != nil {
+		return 0, err
+	}
+	if !neg || parsed == 0 {
+		return parsed, nil
+	}
+	return -parsed, nil
+}
+
 // FormatAmount formats non-negative integer hundredths with two fractional
 // digits. Callers enforce additional rules such as whether zero is allowed.
 func FormatAmount(hundredths int64) (string, error) {

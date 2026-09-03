@@ -86,6 +86,18 @@ type KnownMerchant struct {
 	UpdatedAt      string `json:"updated_at"`
 }
 
+type Account struct {
+	ID             int64   `json:"id"`
+	Name           string  `json:"name"`
+	Type           string  `json:"type"`
+	OpeningBalance string  `json:"opening_balance"`
+	CurrentBalance string  `json:"current_balance"`
+	Active         bool    `json:"active"`
+	Note           *string `json:"note"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+}
+
 type Page struct {
 	Limit    int64 `json:"limit"`
 	Offset   int64 `json:"offset"`

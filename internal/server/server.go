@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jordanp2002/local-finance-mcp/internal/account"
 	"github.com/jordanp2002/local-finance-mcp/internal/budget"
 	"github.com/jordanp2002/local-finance-mcp/internal/category"
 	"github.com/jordanp2002/local-finance-mcp/internal/database"
@@ -40,6 +41,7 @@ func New(db *sql.DB, now func() time.Time, logger *log.Logger) *mcp.Server {
 		Version: version,
 	}, nil)
 	categoryStore := &category.Store{DB: db, Now: now}
+	registerAccountTools(srv, &account.Store{DB: db, Now: now}, logger)
 	registerBudgetTools(srv, &budget.Store{DB: db, Now: now}, logger)
 	registerCategoryTools(srv, categoryStore, logger)
 	registerMerchantTools(srv, &merchant.Store{DB: db}, categoryStore, logger)

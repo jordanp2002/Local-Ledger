@@ -29,6 +29,10 @@ const (
 	ErrorCodeSinkingFundRolloverConflict         ErrorCode = "sinking_fund_rollover_conflict"
 	ErrorCodeRecurringTransactionNotFound        ErrorCode = "recurring_transaction_not_found"
 	ErrorCodeRecurringCategoryInactive           ErrorCode = "recurring_category_inactive"
+	ErrorCodeAccountNotFound                     ErrorCode = "account_not_found"
+	ErrorCodeAccountAlreadyExists                ErrorCode = "account_already_exists"
+	ErrorCodeAccountInactive                     ErrorCode = "account_inactive"
+	ErrorCodeAccountBalanceNotZero               ErrorCode = "account_balance_not_zero"
 	ErrorCodeInternalError                       ErrorCode = "internal_error"
 )
 
@@ -176,6 +180,14 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The requested recurring transaction was not found."
 	case ErrorCodeRecurringCategoryInactive:
 		return "The recurring transaction references an inactive category."
+	case ErrorCodeAccountNotFound:
+		return "The requested account was not found."
+	case ErrorCodeAccountAlreadyExists:
+		return "The account already exists."
+	case ErrorCodeAccountInactive:
+		return "The requested account is inactive."
+	case ErrorCodeAccountBalanceNotZero:
+		return "The account balance must be zero."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:
