@@ -21,8 +21,8 @@ func TestAddTransactionsToolDiscovery(t *testing.T) {
 	if got := listedToolNames(result.Tools); strings.Join(got, ",") != strings.Join(categoryToolNames, ",") {
 		t.Fatalf("tools = %v, want %v", got, categoryToolNames)
 	}
-	if len(result.Tools) != 36 {
-		t.Fatalf("tool count = %d, want 36", len(result.Tools))
+	if len(result.Tools) != 40 {
+		t.Fatalf("tool count = %d, want 40", len(result.Tools))
 	}
 
 	tool := toolByName(t, result.Tools, "add_transactions")

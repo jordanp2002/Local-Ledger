@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -53,6 +53,9 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		}
 	}
 
+	if countNonConstraintIndexes(indexes["accounts"]) != 0 {
+		t.Fatalf("accounts has a speculative non-constraint index: %v", indexes["accounts"])
+	}
 	if countNonConstraintIndexes(indexes["categories"]) != 0 {
 		t.Fatalf("categories has a speculative non-constraint index: %v", indexes["categories"])
 	}
@@ -120,6 +123,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	}
 
 	wantForeignKeys := map[string]bool{
+		"accounts":                   false,
 		"budget_rollovers":           true,
 		"categories":                 false,
 		"budgets":                    true,
@@ -355,8 +359,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 7 {
-		t.Fatalf("reopened user_version = %d, want 7", version)
+	if version != 8 {
+		t.Fatalf("reopened user_version = %d, want 8", version)
 	}
 
 	var categoryName string
