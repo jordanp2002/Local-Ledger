@@ -35,6 +35,8 @@ func TestErrorCodesMatchApprovedContract(t *testing.T) {
 		{name: "account already exists", code: contract.ErrorCodeAccountAlreadyExists, want: "account_already_exists"},
 		{name: "account inactive", code: contract.ErrorCodeAccountInactive, want: "account_inactive"},
 		{name: "account balance not zero", code: contract.ErrorCodeAccountBalanceNotZero, want: "account_balance_not_zero"},
+		{name: "account entry not found", code: contract.ErrorCodeAccountEntryNotFound, want: "account_entry_not_found"},
+		{name: "account entry not reversible", code: contract.ErrorCodeAccountEntryNotReversible, want: "account_entry_not_reversible"},
 		{name: "internal error", code: contract.ErrorCodeInternalError, want: "internal_error"},
 	}
 

@@ -23,8 +23,8 @@ func TestMigrateNewDatabaseAppliesEmbeddedMigration(t *testing.T) {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 
-	if got := migrationVersion(t, db); got != 8 {
-		t.Fatalf("migration version = %d, want 8", got)
+	if got := migrationVersion(t, db); got != 9 {
+		t.Fatalf("migration version = %d, want 9", got)
 	}
 }
 
@@ -40,8 +40,8 @@ func TestMigrateTwiceIsSafe(t *testing.T) {
 		t.Fatalf("second Migrate() error = %v", err)
 	}
 
-	if got := migrationVersion(t, db); got != 8 {
-		t.Fatalf("migration version = %d, want 8", got)
+	if got := migrationVersion(t, db); got != 9 {
+		t.Fatalf("migration version = %d, want 9", got)
 	}
 }
 

@@ -17,8 +17,17 @@ Asset accounts are local records only. These tools never contact a bank.
 | --- | --- |
 | `create_account` | Create an asset account or reactivate a matching inactive account. |
 | `update_account` | Rename an account or change its note. |
-| `list_accounts` | List and filter accounts with their reported balances. |
-| `disable_account` | Retire an account whose balance is zero without deleting its history. |
+| `list_accounts` | List and filter accounts with their derived balances. |
+| `disable_account` | Retire an account whose derived balance is zero without deleting its history. |
+| `record_account_activity` | Record a local deposit or withdrawal without affecting budgets. |
+| `reconcile_account_balance` | Reconcile an account to a reported balance with an auditable delta. |
+| `list_account_activity` | List activity with running balances in stable order. |
+| `reverse_account_activity` | Reverse one activity entry with an offsetting entry. |
+
+Activity write responses return the resulting balance at the original write,
+including on an exact retry. `list_account_activity` calculates running balances
+in date, creation timestamp, and ID order, so later backdated activity can change
+the historical running balances without changing an earlier write's retry result.
 
 ## 3. Set up a monthly budget
 

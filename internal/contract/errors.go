@@ -33,6 +33,8 @@ const (
 	ErrorCodeAccountAlreadyExists                ErrorCode = "account_already_exists"
 	ErrorCodeAccountInactive                     ErrorCode = "account_inactive"
 	ErrorCodeAccountBalanceNotZero               ErrorCode = "account_balance_not_zero"
+	ErrorCodeAccountEntryNotFound                ErrorCode = "account_entry_not_found"
+	ErrorCodeAccountEntryNotReversible           ErrorCode = "account_entry_not_reversible"
 	ErrorCodeInternalError                       ErrorCode = "internal_error"
 )
 
@@ -188,6 +190,10 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The requested account is inactive."
 	case ErrorCodeAccountBalanceNotZero:
 		return "The account balance must be zero."
+	case ErrorCodeAccountEntryNotFound:
+		return "The requested account entry was not found."
+	case ErrorCodeAccountEntryNotReversible:
+		return "The requested account entry cannot be reversed."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:

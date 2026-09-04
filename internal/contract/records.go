@@ -98,6 +98,21 @@ type Account struct {
 	UpdatedAt      string  `json:"updated_at"`
 }
 
+type AccountEntry struct {
+	ID                int64   `json:"id"`
+	AccountID         int64   `json:"account_id"`
+	Account           string  `json:"account"`
+	Kind              string  `json:"kind"`
+	Amount            string  `json:"amount"`
+	Delta             string  `json:"delta"`
+	Date              string  `json:"date"`
+	Note              *string `json:"note"`
+	ReversalOfEntryID *int64  `json:"reversal_of_entry_id"`
+	TransferID        *int64  `json:"transfer_id"`
+	CreatedAt         string  `json:"created_at"`
+	BalanceAfter      string  `json:"balance_after"`
+}
+
 type Page struct {
 	Limit    int64 `json:"limit"`
 	Offset   int64 `json:"offset"`
