@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"account_entries", "account_reconcile_noops", "accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -91,6 +91,16 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	}
 	if countNonConstraintIndexes(indexes["transaction_idempotency"]) != 0 {
 		t.Fatalf("transaction_idempotency has a speculative non-constraint index: %v", indexes["transaction_idempotency"])
+	}
+	if countNonConstraintIndexes(indexes["account_entries"]) != 2 {
+		t.Fatalf("account_entries non-constraint index count = %d, want 2", countNonConstraintIndexes(indexes["account_entries"]))
+	}
+	if !hasIndexSignature(indexes["account_entries"], schemaIndexColumn{name: "account_id"}, schemaIndexColumn{name: "date"}, schemaIndexColumn{name: "created_at"}, schemaIndexColumn{name: "id"}) ||
+		!hasIndexSignature(indexes["account_entries"], schemaIndexColumn{name: "account_id"}) {
+		t.Fatalf("account_entries indexes = %v, want account/date/created/id and account", indexes["account_entries"])
+	}
+	if countNonConstraintIndexes(indexes["account_reconcile_noops"]) != 0 {
+		t.Fatalf("account_reconcile_noops has a speculative non-constraint index: %v", indexes["account_reconcile_noops"])
 	}
 	if countNonConstraintIndexes(indexes["budget_rollovers"]) != 2 {
 		t.Fatalf("budget_rollovers non-constraint index count = %d, want 2", countNonConstraintIndexes(indexes["budget_rollovers"]))
@@ -162,6 +172,14 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 			if len(foreignKeys) != 2 {
 				t.Fatalf("budget_rollovers foreign keys = %v, want exactly two", foreignKeys)
 			}
+			continue
+		}
+		if table == "account_entries" {
+			assertAccountEntryForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "account_reconcile_noops" {
+			assertAccountNoopForeignKeys(t, foreignKeys)
 			continue
 		}
 		if !wantForeignKeys[table] {
@@ -359,8 +377,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 8 {
-		t.Fatalf("reopened user_version = %d, want 8", version)
+	if version != 9 {
+		t.Fatalf("reopened user_version = %d, want 9", version)
 	}
 
 	var categoryName string
@@ -654,6 +672,45 @@ func assertAllocationForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
 	categoryFK, ok := byFrom["category_id"]
 	if !ok || categoryFK.table != "categories" || categoryFK.to != "id" || (categoryFK.onDelete != "RESTRICT" && categoryFK.onDelete != "NO ACTION") {
 		t.Fatalf("category_id foreign key = %v, want categories(id) with restrictive delete", categoryFK)
+	}
+}
+
+func assertAccountEntryForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 2 {
+		t.Fatalf("account_entries foreign keys = %v, want 2", foreignKeys)
+	}
+	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
+	for _, foreignKey := range foreignKeys {
+		byFrom[foreignKey.from] = foreignKey
+	}
+	accountFK, ok := byFrom["account_id"]
+	if !ok || accountFK.table != "accounts" || accountFK.to != "id" {
+		t.Fatalf("account_id foreign key = %v, want accounts(id)", accountFK)
+	}
+	if accountFK.onDelete != "RESTRICT" && accountFK.onDelete != "NO ACTION" {
+		t.Fatalf("account_id delete action = %q, want RESTRICT or NO ACTION", accountFK.onDelete)
+	}
+	reversalFK, ok := byFrom["reversal_of_entry_id"]
+	if !ok || reversalFK.table != "account_entries" || reversalFK.to != "id" {
+		t.Fatalf("reversal_of_entry_id foreign key = %v, want account_entries(id)", reversalFK)
+	}
+	if reversalFK.onDelete != "RESTRICT" && reversalFK.onDelete != "NO ACTION" {
+		t.Fatalf("reversal_of_entry_id delete action = %q, want RESTRICT or NO ACTION", reversalFK.onDelete)
+	}
+}
+
+func assertAccountNoopForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 1 {
+		t.Fatalf("account_reconcile_noops foreign keys = %v, want 1", foreignKeys)
+	}
+	foreignKey := foreignKeys[0]
+	if foreignKey.table != "accounts" || foreignKey.from != "account_id" || foreignKey.to != "id" {
+		t.Fatalf("account_reconcile_noops foreign key = %v, want account_id -> accounts(id)", foreignKey)
+	}
+	if foreignKey.onDelete != "RESTRICT" && foreignKey.onDelete != "NO ACTION" {
+		t.Fatalf("account_reconcile_noops delete action = %q, want RESTRICT or NO ACTION", foreignKey.onDelete)
 	}
 }
 

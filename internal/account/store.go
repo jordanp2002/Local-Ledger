@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -181,7 +182,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (CreateResult, []con
 		return CreateResult{}, nil, err
 	}
 	if found {
-		foundAccount, err := toContract(existing)
+		foundAccount, err := accountWithBalance(ctx, tx, existing)
 		if err != nil {
 			return CreateResult{}, nil, err
 		}
@@ -209,7 +210,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (CreateResult, []con
 		if err != nil {
 			return CreateResult{}, nil, err
 		}
-		account, err := toContract(reactivated)
+		account, err := accountWithBalance(ctx, tx, reactivated)
 		if err != nil {
 			return CreateResult{}, nil, err
 		}
@@ -233,7 +234,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (CreateResult, []con
 	if err != nil {
 		return CreateResult{}, nil, err
 	}
-	account, err := toContract(created)
+	account, err := accountWithBalance(ctx, tx, created)
 	if err != nil {
 		return CreateResult{}, nil, err
 	}
@@ -311,7 +312,7 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (UpdateResult, []con
 		}
 		return UpdateResult{}, nil, err
 	}
-	existingAccount, err := toContract(existing)
+	existingAccount, err := accountWithBalance(ctx, tx, existing)
 	if err != nil {
 		return UpdateResult{}, nil, err
 	}
@@ -338,7 +339,7 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (UpdateResult, []con
 			return UpdateResult{}, nil, err
 		}
 		if found && conflict.id != existing.id {
-			conflictAccount, err := toContract(conflict)
+			conflictAccount, err := accountWithBalance(ctx, tx, conflict)
 			if err != nil {
 				return UpdateResult{}, nil, err
 			}
@@ -354,7 +355,7 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (UpdateResult, []con
 	if err != nil {
 		return UpdateResult{}, nil, err
 	}
-	account, err := toContract(updated)
+	account, err := accountWithBalance(ctx, tx, updated)
 	if err != nil {
 		return UpdateResult{}, nil, err
 	}
@@ -392,6 +393,11 @@ func (s *Store) List(ctx context.Context, in ListInput) ([]contract.Account, []c
 	if s == nil || s.DB == nil {
 		return nil, nil, errors.New("account store database is nil")
 	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	query := `SELECT id, name, type, opening_balance_hundredths, active, note, created_at, updated_at FROM accounts`
 	conds := []string{}
 	args := []any{}
@@ -410,7 +416,7 @@ func (s *Store) List(ctx context.Context, in ListInput) ([]contract.Account, []c
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
 	query += " ORDER BY active DESC, name COLLATE NOCASE ASC, id ASC"
-	rows, err := s.DB.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -421,13 +427,16 @@ func (s *Store) List(ctx context.Context, in ListInput) ([]contract.Account, []c
 		if err != nil {
 			return nil, nil, err
 		}
-		account, err := toContract(row)
+		account, err := accountWithBalance(ctx, tx, row)
 		if err != nil {
 			return nil, nil, err
 		}
 		accounts = append(accounts, account)
 	}
 	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, nil, err
 	}
 	return accounts, nil, nil
@@ -453,7 +462,7 @@ func (s *Store) Disable(ctx context.Context, id int64) (DisableResult, []contrac
 		}
 		return DisableResult{}, nil, err
 	}
-	account, err := toContract(existing)
+	account, err := accountWithBalance(ctx, tx, existing)
 	if err != nil {
 		return DisableResult{}, nil, err
 	}
@@ -463,7 +472,11 @@ func (s *Store) Disable(ctx context.Context, id int64) (DisableResult, []contrac
 		}
 		return DisableResult{Account: account, Changed: false}, nil, nil
 	}
-	if existing.openingHundredths != 0 {
+	current, err := balanceInTx(ctx, tx, existing.id, existing.openingHundredths)
+	if err != nil {
+		return DisableResult{}, nil, err
+	}
+	if current != 0 {
 		return DisableResult{}, nil, &BalanceNotZeroError{Account: account}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET active = 0, updated_at = ? WHERE id = ?`, timestamp(s.now()), id); err != nil {
@@ -473,7 +486,7 @@ func (s *Store) Disable(ctx context.Context, id int64) (DisableResult, []contrac
 	if err != nil {
 		return DisableResult{}, nil, err
 	}
-	disabledAccount, err := toContract(disabled)
+	disabledAccount, err := accountWithBalance(ctx, tx, disabled)
 	if err != nil {
 		return DisableResult{}, nil, err
 	}
@@ -500,12 +513,15 @@ func scanRow(scanner interface{ Scan(dest ...any) error }) (accountRow, error) {
 	return row, err
 }
 
-func toContract(row accountRow) (contract.Account, error) {
+func toContract(row accountRow, currentHundredths int64) (contract.Account, error) {
 	opening, err := contract.FormatSignedAmount(row.openingHundredths)
 	if err != nil {
 		return contract.Account{}, err
 	}
-	current := opening
+	current, err := contract.FormatSignedAmount(currentHundredths)
+	if err != nil {
+		return contract.Account{}, err
+	}
 	var note *string
 	if row.note.Valid {
 		value := row.note.String
@@ -522,6 +538,58 @@ func toContract(row accountRow) (contract.Account, error) {
 		CreatedAt:      row.createdAt,
 		UpdatedAt:      row.updatedAt,
 	}, nil
+}
+
+func accountWithBalance(ctx context.Context, tx *sql.Tx, row accountRow) (contract.Account, error) {
+	current, err := balanceInTx(ctx, tx, row.id, row.openingHundredths)
+	if err != nil {
+		return contract.Account{}, err
+	}
+	return toContract(row, current)
+}
+
+func balanceInTx(ctx context.Context, tx *sql.Tx, accountID, opening int64) (int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT delta_hundredths FROM account_entries WHERE account_id = ? ORDER BY id ASC`, accountID)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	total := opening
+	for rows.Next() {
+		var delta int64
+		if err := rows.Scan(&delta); err != nil {
+			return 0, err
+		}
+		next, ok := checkedSignedAdd(total, delta)
+		if !ok {
+			return 0, errors.New("account balance overflow")
+		}
+		total = next
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func checkedSignedAdd(left, right int64) (int64, bool) {
+	if right > 0 && left > math.MaxInt64-right {
+		return 0, false
+	}
+	if right < 0 && left < math.MinInt64-right {
+		return 0, false
+	}
+	return left + right, true
+}
+
+func checkedSignedSub(left, right int64) (int64, bool) {
+	if right > 0 && left < math.MinInt64+right {
+		return 0, false
+	}
+	if right < 0 && left > math.MaxInt64+right {
+		return 0, false
+	}
+	return left - right, true
 }
 
 type queryer interface {

@@ -259,8 +259,8 @@ func TestStdioLifecycle(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query migration version: %v", err)
 	}
-	if version != 8 {
-		t.Fatalf("migration version = %d, want 8", version)
+	if version != 9 {
+		t.Fatalf("migration version = %d, want 9", version)
 	}
 
 	var name string

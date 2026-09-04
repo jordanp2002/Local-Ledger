@@ -63,6 +63,10 @@ type accountStore interface {
 	Update(ctx context.Context, in account.UpdateInput) (account.UpdateResult, []contract.FieldIssue, error)
 	List(ctx context.Context, in account.ListInput) ([]contract.Account, []contract.FieldIssue, error)
 	Disable(ctx context.Context, id int64) (account.DisableResult, []contract.FieldIssue, error)
+	RecordActivity(ctx context.Context, in account.RecordInput) (account.RecordResult, []contract.FieldIssue, error)
+	ReconcileBalance(ctx context.Context, in account.ReconcileInput) (account.ReconcileResult, []contract.FieldIssue, error)
+	ListActivity(ctx context.Context, in account.ListActivityInput) (account.ListActivityResult, []contract.FieldIssue, error)
+	ReverseActivity(ctx context.Context, in account.ReverseInput) (account.ReverseResult, []contract.FieldIssue, error)
 }
 
 type accountTools struct {
@@ -96,6 +100,8 @@ func registerAccountTools(srv *mcp.Server, store accountStore, logger *log.Logge
 		Description: "Retire a local asset account with exactly zero balance. History is preserved, never deleted.",
 		Annotations: writableToolAnnotations(true, true),
 	}, tools.disableAccount)
+
+	registerAccountActivityTools(srv, store, tools.logger)
 }
 
 func (t *accountTools) createAccount(ctx context.Context, req *mcp.CallToolRequest, in createAccountInput) (*mcp.CallToolResult, any, error) {
@@ -179,6 +185,9 @@ func (t *accountTools) disableAccount(ctx context.Context, _ *mcp.CallToolReques
 }
 
 func (t *accountTools) mapAccountError(tool string, err error) (*mcp.CallToolResult, any, error) {
+	if code, message, details, ok := mapAccountActivityError(err); ok {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(code, message, false, details)))
+	}
 	var exists *account.AlreadyExistsError
 	if errors.As(err, &exists) {
 		return toolError(contract.NewErrorEnvelope(contract.NewError(
