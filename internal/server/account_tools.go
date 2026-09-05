@@ -123,7 +123,7 @@ func (t *accountTools) createAccount(ctx context.Context, req *mcp.CallToolReque
 		NotePresent:    notePresent,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("create_account", err)
@@ -151,7 +151,7 @@ func (t *accountTools) updateAccount(ctx context.Context, req *mcp.CallToolReque
 		NotePresent: notePresent,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("update_account", err)
@@ -166,7 +166,7 @@ func (t *accountTools) listAccounts(ctx context.Context, _ *mcp.CallToolRequest,
 		IncludeInactive: in.IncludeInactive,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("list_accounts", err)
@@ -180,7 +180,7 @@ func (t *accountTools) listAccounts(ctx context.Context, _ *mcp.CallToolRequest,
 func (t *accountTools) disableAccount(ctx context.Context, _ *mcp.CallToolRequest, in disableAccountInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Disable(ctx, in.ID)
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("disable_account", err)
@@ -239,17 +239,5 @@ func (t *accountTools) mapAccountError(tool string, err error) (*mcp.CallToolRes
 			map[string]any{},
 		)))
 	}
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
-}
-
-func invalidAccountInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
+	return internalToolError(t.logger, tool, err)
 }

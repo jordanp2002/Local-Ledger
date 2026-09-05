@@ -21,9 +21,6 @@ type ValidationError struct {
 }
 
 func (e *ValidationError) Error() string {
-	if e == nil {
-		return "invalid category input"
-	}
 	return "invalid category input"
 }
 

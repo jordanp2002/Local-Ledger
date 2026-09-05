@@ -19,29 +19,11 @@ var (
 	ErrRecurringCategoryInactive = errors.New("recurring category inactive")
 )
 
-type queryer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}
-
 // Store owns recurring expense template validation and persistence.
 type Store struct {
 	DB *sql.DB
 	// Now supplies the current local time.
 	Now func() time.Time
-}
-
-// Service is the recurring-template behavior consumed by the MCP adapter.
-type Service interface {
-	Create(context.Context, CreateInput) (CreateResult, []contract.FieldIssue, error)
-	List(context.Context) ([]contract.RecurringTransaction, error)
-	Disable(context.Context, int64) (DisableResult, []contract.FieldIssue, error)
-	Update(context.Context, UpdateInput) (UpdateResult, []contract.FieldIssue, error)
-	Enable(context.Context, int64) (EnableResult, []contract.FieldIssue, error)
-	PreviewDue(context.Context) (PreviewDueResult, error)
-	PreviewUpcoming(context.Context) (PreviewUpcomingResult, error)
-	MaterializeDue(context.Context) (MaterializeDueResult, error)
 }
 
 func (s *Store) timestamp() (string, error) {
@@ -452,7 +434,7 @@ func validateID(id int64) *contract.FieldIssue {
 	return nil
 }
 
-func getRecurringByID(ctx context.Context, q queryer, id int64) (contract.RecurringTransaction, error) {
+func getRecurringByID(ctx context.Context, q *sql.Tx, id int64) (contract.RecurringTransaction, error) {
 	return scanRecurringTransaction(q.QueryRowContext(ctx, `
 		SELECT `+recurringColumns+`
 		FROM recurring_transactions r
@@ -500,7 +482,7 @@ func scanRecurringTransaction(row interface{ Scan(dest ...any) error }) (contrac
 	return r, nil
 }
 
-func resolveActiveCategory(ctx context.Context, q queryer, name string) (contract.Category, error) {
+func resolveActiveCategory(ctx context.Context, q *sql.Tx, name string) (contract.Category, error) {
 	category, found, err := lookupCategory(ctx, q, name)
 	if err != nil {
 		return contract.Category{}, err
@@ -528,7 +510,7 @@ func resolveActiveCategory(ctx context.Context, q queryer, name string) (contrac
 	return category, nil
 }
 
-func lookupCategory(ctx context.Context, q queryer, name string) (contract.Category, bool, error) {
+func lookupCategory(ctx context.Context, q *sql.Tx, name string) (contract.Category, bool, error) {
 	category, err := scanCategory(q.QueryRowContext(ctx, `
 		SELECT `+categoryColumns+`
 		FROM categories
@@ -543,7 +525,7 @@ func lookupCategory(ctx context.Context, q queryer, name string) (contract.Categ
 	return category, true, nil
 }
 
-func listActiveCategories(ctx context.Context, q queryer) ([]contract.Category, error) {
+func listActiveCategories(ctx context.Context, q *sql.Tx) ([]contract.Category, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT `+categoryColumns+`
 		FROM categories

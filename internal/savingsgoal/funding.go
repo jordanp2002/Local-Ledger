@@ -92,13 +92,37 @@ type goalRow struct {
 	active  int
 }
 
+const goalSelect = `
+	SELECT g.id, g.name, g.account_id, a.name, g.target_amount_hundredths,
+	       g.target_date, g.note, g.status, g.completed_at, g.cancelled_at,
+	       g.created_at, g.updated_at, a.active, COALESCE(SUM(e.delta_hundredths), 0)
+	FROM savings_goals g
+	JOIN accounts a ON a.id = g.account_id
+	LEFT JOIN savings_goal_entries e ON e.goal_id = g.id
+`
+
+const goalOrder = `
+	ORDER BY CASE WHEN g.status = 'active' THEN 0 ELSE 1 END,
+	         CASE WHEN g.status = 'active' AND g.target_date IS NULL THEN 1 ELSE 0 END,
+	         CASE WHEN g.status = 'active' THEN g.target_date END,
+	         CASE WHEN g.status != 'active' THEN COALESCE(g.completed_at, g.cancelled_at, g.updated_at) END DESC,
+	         g.name COLLATE NOCASE, g.id
+`
+
 func loadGoal(ctx context.Context, tx *sql.Tx, id int64) (goalRow, error) {
+	row, err := scanGoal(tx.QueryRowContext(ctx, goalSelect+" WHERE g.id = ? GROUP BY g.id", id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return row, &NotFoundError{ID: id}
+	}
+	return row, err
+}
+
+func scanGoal(row interface{ Scan(...any) error }) (goalRow, error) {
 	var r goalRow
 	var targetDate, note, completed, cancelled sql.NullString
-	err := tx.QueryRowContext(ctx, `SELECT g.id,g.name,g.account_id,a.name,g.target_amount_hundredths,g.target_date,g.note,g.status,g.completed_at,g.cancelled_at,g.created_at,g.updated_at,a.active,COALESCE(SUM(e.delta_hundredths),0) FROM savings_goals g JOIN accounts a ON a.id=g.account_id LEFT JOIN savings_goal_entries e ON e.goal_id=g.id WHERE g.id=? GROUP BY g.id`, id).Scan(&r.values.id, &r.values.name, &r.values.accountID, &r.values.account, &r.values.targetAmount, &targetDate, &note, &r.values.status, &completed, &cancelled, &r.values.createdAt, &r.values.updatedAt, &r.active, &r.current)
-	if errors.Is(err, sql.ErrNoRows) {
-		return r, &NotFoundError{ID: id}
-	}
+	err := row.Scan(&r.values.id, &r.values.name, &r.values.accountID, &r.values.account,
+		&r.values.targetAmount, &targetDate, &note, &r.values.status, &completed, &cancelled,
+		&r.values.createdAt, &r.values.updatedAt, &r.active, &r.current)
 	if err != nil {
 		return r, err
 	}
@@ -157,10 +181,10 @@ func accountAllocation(ctx context.Context, tx *sql.Tx, accountID int64) (contra
 		return contract.SavingsAccountAllocation{}, 0, 0, errors.New("account balance overflow")
 	}
 	balance := opening + entries
-	if allocated > 0 && balance < math.MinInt64+allocated {
+	unallocated, ok := checkedSubtract(balance, allocated)
+	if !ok || balance == math.MinInt64 || unallocated == math.MinInt64 || allocated == math.MinInt64 {
 		return contract.SavingsAccountAllocation{}, 0, 0, errors.New("allocation overflow")
 	}
-	unallocated := balance - allocated
 	shortfall := int64(0)
 	if unallocated < 0 {
 		shortfall = -unallocated
@@ -562,6 +586,7 @@ func (s *Store) Overview(ctx context.Context, includeInactive, includeClosed boo
 	if err != nil {
 		return contract.SavingsOverview{}, err
 	}
+	defer rows.Close()
 	ids := []int64{}
 	for rows.Next() {
 		var id int64
@@ -570,7 +595,12 @@ func (s *Store) Overview(ctx context.Context, includeInactive, includeClosed boo
 		}
 		ids = append(ids, id)
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return contract.SavingsOverview{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return contract.SavingsOverview{}, err
+	}
 	out := contract.SavingsOverview{Accounts: []contract.SavingsAccountAllocation{}, Goals: []contract.SavingsGoal{}}
 	var tb, ta, tu, ts int64
 	for _, id := range ids {
@@ -580,28 +610,33 @@ func (s *Store) Overview(ctx context.Context, includeInactive, includeClosed boo
 		}
 		u, _ := contract.ParseSignedAmount(a.Unallocated)
 		sh, _ := contract.ParseAmount(a.AllocationShortfall)
-		tb += b
-		ta += al
-		tu += u
-		ts += sh
+		for _, sum := range []struct {
+			total *int64
+			value int64
+		}{{&tb, b}, {&ta, al}, {&tu, u}, {&ts, sh}} {
+			next, ok := checkedSubtract(*sum.total, -sum.value)
+			if !ok || next == math.MinInt64 {
+				return out, errors.New("savings overview total overflow")
+			}
+			*sum.total = next
+		}
 		out.Accounts = append(out.Accounts, a)
 	}
-	q := `SELECT g.id FROM savings_goals g JOIN accounts a ON a.id=g.account_id WHERE 1=1`
+	q := goalSelect + ` WHERE 1=1`
 	if !includeInactive {
 		q += ` AND a.active=1`
 	}
 	if !includeClosed {
 		q += ` AND g.status='active'`
 	}
-	q += ` ORDER BY CASE WHEN g.status='active' THEN 0 ELSE 1 END,CASE WHEN g.status='active' AND g.target_date IS NULL THEN 1 ELSE 0 END,CASE WHEN g.status='active' THEN g.target_date END,CASE WHEN g.status!='active' THEN COALESCE(g.completed_at,g.cancelled_at,g.updated_at) END DESC,g.name COLLATE NOCASE,g.id`
+	q += " GROUP BY g.id " + goalOrder
 	rows, err = tx.QueryContext(ctx, q)
 	if err != nil {
 		return out, err
 	}
+	defer rows.Close()
 	for rows.Next() {
-		var id int64
-		rows.Scan(&id)
-		g, e := loadGoal(ctx, tx, id)
+		g, e := scanGoal(rows)
 		if e != nil {
 			return out, e
 		}
@@ -622,7 +657,12 @@ func (s *Store) Overview(ctx context.Context, includeInactive, includeClosed boo
 			out.Counts.Cancelled++
 		}
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	if err := rows.Close(); err != nil {
+		return out, err
+	}
 	out.TotalBalance = formatSigned(tb)
 	out.TotalAllocated = formatSigned(ta)
 	out.TotalUnallocated = formatSigned(tu)

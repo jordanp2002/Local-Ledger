@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
@@ -47,44 +48,45 @@ func loadTransaction(ctx context.Context, q rowQueryer, id int64) (contract.Tran
 	if err != nil {
 		return contract.Transaction{}, err
 	}
-	allocations, err := loadAllocations(ctx, q, id)
+	allocations, err := loadAllocations(ctx, q, []int64{id})
 	if err != nil {
 		return contract.Transaction{}, err
 	}
-	return withTransactionAllocations(recorded, allocations)
+	return withTransactionAllocations(recorded, allocations[id])
 }
 
-func loadAllocations(ctx context.Context, q rowQueryer, transactionID int64) ([]contract.TransactionAllocation, error) {
+func loadAllocations(ctx context.Context, q rowQueryer, transactionIDs []int64) (map[int64][]contract.TransactionAllocation, error) {
+	allocations := make(map[int64][]contract.TransactionAllocation, len(transactionIDs))
+	if len(transactionIDs) == 0 {
+		return allocations, nil
+	}
+	args := make([]any, len(transactionIDs))
+	for i, id := range transactionIDs {
+		args[i] = id
+	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT a.category_id, c.name, a.amount_hundredths
+		SELECT a.transaction_id, a.category_id, c.name, a.amount_hundredths
 		FROM transaction_allocations AS a
 		INNER JOIN categories AS c ON c.id = a.category_id
-		WHERE a.transaction_id = ?
-		ORDER BY c.name COLLATE NOCASE ASC, a.category_id ASC
-	`, transactionID)
+		WHERE a.transaction_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+`)
+		ORDER BY a.transaction_id, c.name COLLATE NOCASE ASC, a.category_id ASC
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	allocations := make([]contract.TransactionAllocation, 0)
-	var total int64
 	for rows.Next() {
 		var allocation contract.TransactionAllocation
-		var amount int64
-		if err := rows.Scan(&allocation.CategoryID, &allocation.Category, &amount); err != nil {
+		var transactionID, amount int64
+		if err := rows.Scan(&transactionID, &allocation.CategoryID, &allocation.Category, &amount); err != nil {
 			return nil, err
 		}
-		next, ok := checkedAllocationAdd(total, amount)
-		if !ok {
-			return nil, errors.New("transaction allocation total overflow")
-		}
-		total = next
 		allocation.Amount, err = contract.FormatAmount(amount)
 		if err != nil {
 			return nil, err
 		}
-		allocations = append(allocations, allocation)
+		allocations[transactionID] = append(allocations[transactionID], allocation)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -92,8 +94,10 @@ func loadAllocations(ctx context.Context, q rowQueryer, transactionID int64) ([]
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	if len(allocations) == 0 {
-		return nil, fmt.Errorf("transaction %d has no allocations", transactionID)
+	for _, id := range transactionIDs {
+		if len(allocations[id]) == 0 {
+			return nil, fmt.Errorf("transaction %d has no allocations", id)
+		}
 	}
 	return allocations, nil
 }

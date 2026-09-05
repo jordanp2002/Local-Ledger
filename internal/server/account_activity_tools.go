@@ -108,7 +108,7 @@ func (t *accountTools) recordAccountActivity(ctx context.Context, req *mcp.CallT
 		Note: in.Note, NotePresent: notePresent, IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("record_account_activity", err)
@@ -128,7 +128,7 @@ func (t *accountTools) reconcileAccountBalance(ctx context.Context, req *mcp.Cal
 		Note: in.Note, NotePresent: notePresent, IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("reconcile_account_balance", err)
@@ -146,7 +146,7 @@ func (t *accountTools) listAccountActivity(ctx context.Context, _ *mcp.CallToolR
 		Kind: in.Kind, Limit: in.Limit, Offset: in.Offset,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("list_account_activity", err)
@@ -169,7 +169,7 @@ func (t *accountTools) reverseAccountActivity(ctx context.Context, req *mcp.Call
 		EntryID: in.ID, Note: in.Note, NotePresent: notePresent, IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("reverse_account_activity", err)

@@ -50,7 +50,7 @@ func registerSinkingFundTools(srv *mcp.Server, store *sinkingfund.Store, logger 
 	mcp.AddTool[sinkingFundInput, any](srv, &mcp.Tool{Name: "enable_sinking_fund", Description: "Enable a category sinking fund for the current month.", Annotations: writableToolAnnotations(true, true)}, func(ctx context.Context, _ *mcp.CallToolRequest, in sinkingFundInput) (*mcp.CallToolResult, any, error) {
 		r, f, e := store.Enable(ctx, sinkingfund.EnableInput{Category: in.Category})
 		if len(f) > 0 {
-			return toolError(invalidSinkingFundInput(f))
+			return toolError(invalidInputEnvelope(f))
 		}
 		if e != nil {
 			return mapSinkingFundError("enable_sinking_fund", e, logger)
@@ -65,7 +65,7 @@ func registerSinkingFundTools(srv *mcp.Server, store *sinkingfund.Store, logger 
 	mcp.AddTool[sinkingFundInput, any](srv, &mcp.Tool{Name: "disable_sinking_fund", Description: "Disable a category sinking fund after the current month and release its closing balance.", Annotations: writableToolAnnotations(true, true)}, func(ctx context.Context, _ *mcp.CallToolRequest, in sinkingFundInput) (*mcp.CallToolResult, any, error) {
 		r, f, e := store.Disable(ctx, sinkingfund.DisableInput{Category: in.Category})
 		if len(f) > 0 {
-			return toolError(invalidSinkingFundInput(f))
+			return toolError(invalidInputEnvelope(f))
 		}
 		if e != nil {
 			return mapSinkingFundError("disable_sinking_fund", e, logger)
@@ -76,7 +76,7 @@ func registerSinkingFundTools(srv *mcp.Server, store *sinkingfund.Store, logger 
 	mcp.AddTool[listSinkingFundsInput, any](srv, &mcp.Tool{Name: "list_sinking_funds", Description: "List current sinking-fund balances, optionally including completed history.", Annotations: readOnlyToolAnnotations()}, func(ctx context.Context, _ *mcp.CallToolRequest, in listSinkingFundsInput) (*mcp.CallToolResult, any, error) {
 		r, f, e := store.List(ctx, sinkingfund.ListInput{Category: in.Category, IncludeHistory: in.IncludeHistory})
 		if len(f) > 0 {
-			return toolError(invalidSinkingFundInput(f))
+			return toolError(invalidInputEnvelope(f))
 		}
 		if e != nil {
 			return mapSinkingFundError("list_sinking_funds", e, logger)
@@ -108,9 +108,6 @@ func endMonthValue(p sinkingfund.Period) string {
 		return *p.EndMonth
 	}
 	return p.StartMonth
-}
-func invalidSinkingFundInput(f []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(contract.ErrorCodeInvalidInput, "", false, map[string]any{"fields": f}))
 }
 func mapSinkingFundError(tool string, e error, l *log.Logger) (*mcp.CallToolResult, any, error) {
 	code := contract.ErrorCodeInternalError

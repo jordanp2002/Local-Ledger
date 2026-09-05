@@ -3,30 +3,19 @@ package transaction_test
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jordanp2002/Local-Ledger/internal/category"
 	"github.com/jordanp2002/Local-Ledger/internal/contract"
-	"github.com/jordanp2002/Local-Ledger/internal/database"
 	"github.com/jordanp2002/Local-Ledger/internal/merchant"
 	"github.com/jordanp2002/Local-Ledger/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/tests/testutil"
 )
 
 func openTransactionStore(t *testing.T, now time.Time) (*transaction.Store, *category.Store, *merchant.Store, *sql.DB) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "finance.db")
-	db, err := database.Open(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Open(%q): %v", path, err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
-			t.Errorf("close database: %v", err)
-		}
-	})
+	db := testutil.OpenDB(t)
 	clock := func() time.Time { return now }
 	return &transaction.Store{DB: db, Now: clock}, &category.Store{DB: db, Now: clock}, &merchant.Store{DB: db}, db
 }

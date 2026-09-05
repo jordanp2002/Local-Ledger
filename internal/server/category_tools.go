@@ -103,7 +103,7 @@ func (t *categoryTools) createCategory(ctx context.Context, _ *mcp.CallToolReque
 		case errors.Is(err, category.ErrInvalidName):
 			return toolError(invalidNameEnvelope("must not be empty"))
 		default:
-			return t.internalError("create_category", err)
+			return internalToolError(t.logger, "create_category", err)
 		}
 	}
 
@@ -118,7 +118,7 @@ func (t *categoryTools) createCategory(ctx context.Context, _ *mcp.CallToolReque
 func (t *categoryTools) listCategories(ctx context.Context, _ *mcp.CallToolRequest, _ listCategoriesInput) (*mcp.CallToolResult, any, error) {
 	cats, err := t.store.List(ctx)
 	if err != nil {
-		return t.internalError("list_categories", err)
+		return internalToolError(t.logger, "list_categories", err)
 	}
 
 	return toolOK(listCategoriesOutput{
@@ -144,13 +144,13 @@ func (t *categoryTools) disableCategory(ctx context.Context, _ *mcp.CallToolRequ
 		case errors.Is(err, rollover.ErrDependencyConflict):
 			var dependency *rollover.DependencyConflictError
 			if !errors.As(err, &dependency) {
-				return t.internalError("disable_category", err)
+				return internalToolError(t.logger, "disable_category", err)
 			}
 			return toolError(dependencyConflictEnvelope(dependency))
 		case errors.Is(err, sinkingfund.ErrActive):
 			return toolError(contract.NewErrorEnvelope(contract.NewError(contract.ErrorCodeSinkingFundActive, "Disable the sinking fund before disabling the category.", false, nil)))
 		default:
-			return t.internalError("disable_category", err)
+			return internalToolError(t.logger, "disable_category", err)
 		}
 	}
 
@@ -169,7 +169,7 @@ func (t *categoryTools) renameCategory(ctx context.Context, _ *mcp.CallToolReque
 		var collision *category.AlreadyExistsError
 		switch {
 		case errors.As(err, &validation):
-			return toolError(invalidCategoryInputEnvelope(validation.Fields))
+			return toolError(invalidInputEnvelope(validation.Fields))
 		case errors.Is(err, category.ErrNotFound):
 			return t.categoryNotFoundFor(ctx, in.Category, "rename_category")
 		case errors.As(err, &collision):
@@ -180,7 +180,7 @@ func (t *categoryTools) renameCategory(ctx context.Context, _ *mcp.CallToolReque
 				map[string]any{"category": collision.Category},
 			)))
 		default:
-			return t.internalError("rename_category", err)
+			return internalToolError(t.logger, "rename_category", err)
 		}
 	}
 
@@ -200,7 +200,7 @@ func (t *categoryTools) categoryNotFoundFor(ctx context.Context, name, tool stri
 	requested := category.NormalizeName(name)
 	cats, err := t.store.List(ctx)
 	if err != nil {
-		return t.internalError(tool, err)
+		return internalToolError(t.logger, tool, err)
 	}
 
 	return toolError(contract.NewErrorEnvelope(contract.NewError(
@@ -214,19 +214,6 @@ func (t *categoryTools) categoryNotFoundFor(ctx context.Context, name, tool stri
 	)))
 }
 
-func (t *categoryTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	t.logger.Printf("%s: %v", tool, err)
-	return toolError(contract.NewInternalErrorEnvelope(err))
-}
-
-func toolOK(output any) (*mcp.CallToolResult, any, error) {
-	return nil, output, nil
-}
-
-func toolError(envelope contract.ErrorEnvelope) (*mcp.CallToolResult, any, error) {
-	return &mcp.CallToolResult{IsError: true}, envelope, nil
-}
-
 func invalidNameEnvelope(reason string) contract.ErrorEnvelope {
 	return contract.NewErrorEnvelope(contract.NewError(
 		contract.ErrorCodeInvalidInput,
@@ -237,15 +224,6 @@ func invalidNameEnvelope(reason string) contract.ErrorEnvelope {
 				{"field": "name", "reason": reason},
 			},
 		},
-	))
-}
-
-func invalidCategoryInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
 	))
 }
 

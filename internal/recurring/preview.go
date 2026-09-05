@@ -31,7 +31,7 @@ func (s *Store) PreviewDue(ctx context.Context) (PreviewDueResult, error) {
 	return calculateDue(ctx, tx, now)
 }
 
-func calculateDue(ctx context.Context, q queryer, now time.Time) (PreviewDueResult, error) {
+func calculateDue(ctx context.Context, q *sql.Tx, now time.Time) (PreviewDueResult, error) {
 	schedule, err := calculateSchedule(ctx, q, now)
 	if err != nil {
 		return PreviewDueResult{}, err
@@ -105,7 +105,7 @@ type recurringSchedule struct {
 	items    []scheduledRecurring
 }
 
-func calculateSchedule(ctx context.Context, q queryer, now time.Time) (recurringSchedule, error) {
+func calculateSchedule(ctx context.Context, q *sql.Tx, now time.Time) (recurringSchedule, error) {
 	year, month, day := now.Date()
 	monthStr := fmt.Sprintf("%04d-%02d", year, month)
 	asOfDate := fmt.Sprintf("%04d-%02d-%02d", year, month, day)

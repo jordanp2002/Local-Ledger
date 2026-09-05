@@ -3,16 +3,14 @@ package summary_test
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jordanp2002/Local-Ledger/internal/category"
 	"github.com/jordanp2002/Local-Ledger/internal/contract"
-	"github.com/jordanp2002/Local-Ledger/internal/database"
 	"github.com/jordanp2002/Local-Ledger/internal/summary"
 	"github.com/jordanp2002/Local-Ledger/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/tests/testutil"
 )
 
 type fixture struct {
@@ -24,16 +22,7 @@ type fixture struct {
 
 func openSummaryStore(t *testing.T, now time.Time) fixture {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "finance.db")
-	db, err := database.Open(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Open(%q): %v", path, err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
-			t.Errorf("close database: %v", err)
-		}
-	})
+	db := testutil.OpenDB(t)
 	clock := func() time.Time { return now }
 	return fixture{
 		summary:      &summary.Store{DB: db},

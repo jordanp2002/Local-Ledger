@@ -101,11 +101,11 @@ type previewUpcomingTransactionsOutput struct {
 }
 
 type recurringTools struct {
-	store  recurring.Service
+	store  *recurring.Store
 	logger *log.Logger
 }
 
-func registerRecurringTools(srv *mcp.Server, store recurring.Service, logger *log.Logger) {
+func registerRecurringTools(srv *mcp.Server, store *recurring.Store, logger *log.Logger) {
 	tools := &recurringTools{store: store, logger: logger}
 
 	mcp.AddTool[createRecurringTransactionInput, any](srv, &mcp.Tool{
@@ -166,7 +166,7 @@ func (t *recurringTools) createRecurringTransaction(ctx context.Context, _ *mcp.
 		Note:       in.Note,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidRecurringInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRecurringError("create_recurring_transaction", err)
@@ -181,7 +181,7 @@ func (t *recurringTools) createRecurringTransaction(ctx context.Context, _ *mcp.
 func (t *recurringTools) listRecurringTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ listRecurringTransactionsInput) (*mcp.CallToolResult, any, error) {
 	items, err := t.store.List(ctx)
 	if err != nil {
-		return t.internalError("list_recurring_transactions", err)
+		return internalToolError(t.logger, "list_recurring_transactions", err)
 	}
 	if items == nil {
 		items = []contract.RecurringTransaction{}
@@ -196,7 +196,7 @@ func (t *recurringTools) listRecurringTransactions(ctx context.Context, _ *mcp.C
 func (t *recurringTools) disableRecurringTransaction(ctx context.Context, _ *mcp.CallToolRequest, in disableRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
 	res, fields, err := t.store.Disable(ctx, in.ID)
 	if len(fields) != 0 {
-		return toolError(invalidRecurringInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRecurringError("disable_recurring_transaction", err)
@@ -212,11 +212,11 @@ func (t *recurringTools) disableRecurringTransaction(ctx context.Context, _ *mcp
 func (t *recurringTools) updateRecurringTransaction(ctx context.Context, req *mcp.CallToolRequest, in updateRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
 	updateIn, err := updateRecurringInputFromRequest(req, in)
 	if err != nil {
-		return t.internalError("update_recurring_transaction", err)
+		return internalToolError(t.logger, "update_recurring_transaction", err)
 	}
 	res, fields, err := t.store.Update(ctx, updateIn)
 	if len(fields) != 0 {
-		return toolError(invalidRecurringInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRecurringError("update_recurring_transaction", err)
@@ -231,7 +231,7 @@ func (t *recurringTools) updateRecurringTransaction(ctx context.Context, req *mc
 func (t *recurringTools) enableRecurringTransaction(ctx context.Context, _ *mcp.CallToolRequest, in enableRecurringTransactionInput) (*mcp.CallToolResult, any, error) {
 	res, fields, err := t.store.Enable(ctx, in.ID)
 	if len(fields) != 0 {
-		return toolError(invalidRecurringInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRecurringError("enable_recurring_transaction", err)
@@ -246,7 +246,7 @@ func (t *recurringTools) enableRecurringTransaction(ctx context.Context, _ *mcp.
 func (t *recurringTools) previewDueTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ previewDueTransactionsInput) (*mcp.CallToolResult, any, error) {
 	res, err := t.store.PreviewDue(ctx)
 	if err != nil {
-		return t.internalError("preview_due_transactions", err)
+		return internalToolError(t.logger, "preview_due_transactions", err)
 	}
 	if res.DueTransactions == nil {
 		res.DueTransactions = []contract.DueTransaction{}
@@ -268,7 +268,7 @@ func (t *recurringTools) previewDueTransactions(ctx context.Context, _ *mcp.Call
 func (t *recurringTools) previewUpcomingTransactions(ctx context.Context, _ *mcp.CallToolRequest, _ previewUpcomingTransactionsInput) (*mcp.CallToolResult, any, error) {
 	res, err := t.store.PreviewUpcoming(ctx)
 	if err != nil {
-		return t.internalError("preview_upcoming_transactions", err)
+		return internalToolError(t.logger, "preview_upcoming_transactions", err)
 	}
 	if res.UpcomingTransactions == nil {
 		res.UpcomingTransactions = []contract.UpcomingTransaction{}
@@ -358,21 +358,7 @@ func (t *recurringTools) mapRecurringError(tool string, err error) (*mcp.CallToo
 		)))
 	}
 
-	return t.internalError(tool, err)
-}
-
-func (t *recurringTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	t.logger.Printf("%s: %v", tool, err)
-	return toolError(contract.NewInternalErrorEnvelope(err))
-}
-
-func invalidRecurringInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
+	return internalToolError(t.logger, tool, err)
 }
 
 func updateRecurringInputFromRequest(req *mcp.CallToolRequest, in updateRecurringTransactionInput) (recurring.UpdateInput, error) {

@@ -180,7 +180,7 @@ func registerSummaryTools(srv *mcp.Server, store *summary.Store, logger *log.Log
 func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolRequest, in monthlySummaryInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Monthly(ctx, in.Month)
 	if len(fields) != 0 {
-		return toolError(invalidSummaryInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSummaryError("get_monthly_summary", err)
@@ -207,7 +207,7 @@ func (t *summaryTools) getMonthlySummary(ctx context.Context, _ *mcp.CallToolReq
 func (t *summaryTools) getCategorySummary(ctx context.Context, _ *mcp.CallToolRequest, in categorySummaryInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Category(ctx, in.Category, in.Month)
 	if len(fields) != 0 {
-		return toolError(invalidSummaryInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSummaryError("get_category_summary", err)
@@ -233,7 +233,7 @@ func (t *summaryTools) getCategorySummary(ctx context.Context, _ *mcp.CallToolRe
 func (t *summaryTools) compareMonths(ctx context.Context, _ *mcp.CallToolRequest, in compareMonthsInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Compare(ctx, in.FromMonth, in.ToMonth)
 	if len(fields) != 0 {
-		return toolError(invalidSummaryInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSummaryError("compare_months", err)
@@ -260,7 +260,7 @@ func (t *summaryTools) getMonthlySeries(ctx context.Context, _ *mcp.CallToolRequ
 		IncludeCategories: in.IncludeCategories,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidSummaryInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSummaryError("get_monthly_series", err)
@@ -307,7 +307,7 @@ func (t *summaryTools) getSpendingSummary(ctx context.Context, _ *mcp.CallToolRe
 		Merchant:  in.Merchant,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidSummaryInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSummaryError("get_spending_summary", err)
@@ -337,7 +337,7 @@ func (t *summaryTools) listTopMerchants(ctx context.Context, _ *mcp.CallToolRequ
 		Limit:     in.Limit,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidSummaryInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSummaryError("list_top_merchants", err)
@@ -388,21 +388,5 @@ func (t *summaryTools) mapSummaryError(tool string, err error) (*mcp.CallToolRes
 		)))
 	}
 
-	return t.internalError(tool, err)
-}
-
-func invalidSummaryInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
-}
-
-func (t *summaryTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
+	return internalToolError(t.logger, tool, err)
 }

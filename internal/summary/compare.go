@@ -203,12 +203,12 @@ func comparisonCategories(ctx context.Context, tx *sql.Tx, from, to map[int64]*c
 		if !ok {
 			return nil, fmtOverflow("category spending change")
 		}
-		name, err := categoryName(ctx, tx, id)
-		if err != nil {
-			return nil, err
+		amounts := to[id]
+		if amounts == nil {
+			amounts = from[id]
 		}
 
-		row, err := formatComparisonCategory(id, name,
+		row, err := formatComparisonCategory(id, amounts.name,
 			fromBase, toBase, baseBudgetChange,
 			fromOpening, toOpening, openingChange, fromFund, toFund,
 			fromAdjustment, toAdjustment, rolloverAdjustmentChange,
@@ -229,14 +229,6 @@ func categoryAmountsFor(amounts map[int64]*categoryAmounts, id int64) (int64, in
 		return 0, 0, false, 0, 0, 0
 	}
 	return row.baseBudget, row.sinkingFundOpening, row.sinkingFund, row.rolloverAdjustment, row.budget, row.spending
-}
-
-func categoryName(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
-	var name string
-	if err := tx.QueryRowContext(ctx, `SELECT name FROM categories WHERE id = ?`, id).Scan(&name); err != nil {
-		return "", err
-	}
-	return name, nil
 }
 
 func formatComparisonMonth(month comparisonMonth, remaining int64) (contract.ComparisonMonth, error) {

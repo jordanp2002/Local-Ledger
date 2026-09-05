@@ -78,7 +78,7 @@ func (t *budgetTools) createMonthlyBudget(ctx context.Context, _ *mcp.CallToolRe
 		Overrides:    budgetAllocations(in.Overrides),
 	})
 	if len(fields) != 0 {
-		return toolError(invalidBudgetInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapBudgetError("create_monthly_budget", err)
@@ -97,7 +97,7 @@ func (t *budgetTools) createMonthlyBudget(ctx context.Context, _ *mcp.CallToolRe
 func (t *budgetTools) setBudgets(ctx context.Context, _ *mcp.CallToolRequest, in setBudgetsInput) (*mcp.CallToolResult, any, error) {
 	result, fields, err := t.store.Set(ctx, in.Month, budgetAllocations(in.Budgets))
 	if len(fields) != 0 {
-		return toolError(invalidBudgetInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapBudgetError("set_budgets", err)
@@ -188,7 +188,7 @@ func (t *budgetTools) mapBudgetError(tool string, err error) (*mcp.CallToolResul
 		return toolError(dependencyConflictEnvelope(dependency))
 	}
 
-	return t.internalError(tool, err)
+	return internalToolError(t.logger, tool, err)
 }
 
 func budgetAllocations(in []createMonthlyBudgetAllocation) []budget.Allocation {
@@ -216,25 +216,9 @@ func setBudgetChanges(changes []budget.SetChange) []setBudgetsChange {
 	return out
 }
 
-func invalidBudgetInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
-}
-
 func activeBudgets(budgets []contract.Budget) []contract.Budget {
 	if budgets == nil {
 		return []contract.Budget{}
 	}
 	return budgets
-}
-
-func (t *budgetTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
 }
