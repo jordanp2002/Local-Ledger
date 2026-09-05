@@ -88,6 +88,17 @@ create income, spending, budget, or expense-transaction records.
 | `disable_sinking_fund` | End the current fund period and explicitly release its balance. |
 | `list_sinking_funds` | Review current fund balances, optionally including completed periods. |
 
+## 9. Savings goals
+
+Savings goals describe why money is being reserved in an asset holding account.
+Goals are independent of budget categories.
+
+| Tool | Use |
+| --- | --- |
+| `create_savings_goal` | Create an independent savings goal held in an active asset account. |
+| `update_savings_goal` | Update a savings goal's target amount, deadline, holding account, or note. |
+| `list_savings_goals` | List savings goals with their derived progress. |
+
 Transaction writes never create rollovers automatically. When `add_transaction`,
 `add_split_transaction`, `add_transactions`, `update_transaction`, or
 `materialize_due_transactions` returns a non-empty `rollover_offers` array,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/local-finance-mcp/internal/savingsgoal"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 	ErrAlreadyExists  = errors.New("account already exists")
 	ErrInactive       = errors.New("account inactive")
 	ErrBalanceNotZero = errors.New("account balance must be zero")
+	ErrGoalActive     = errors.New("account has active savings goals or retained allocations")
 )
 
 type AlreadyExistsError struct {
@@ -46,6 +48,13 @@ type BalanceNotZeroError struct {
 
 func (e *BalanceNotZeroError) Error() string        { return ErrBalanceNotZero.Error() }
 func (e *BalanceNotZeroError) Is(target error) bool { return target == ErrBalanceNotZero }
+
+type GoalActiveError struct {
+	Account contract.Account
+}
+
+func (e *GoalActiveError) Error() string        { return ErrGoalActive.Error() }
+func (e *GoalActiveError) Is(target error) bool { return target == ErrGoalActive }
 
 type Store struct {
 	DB  *sql.DB
@@ -471,6 +480,13 @@ func (s *Store) Disable(ctx context.Context, id int64) (DisableResult, []contrac
 			return DisableResult{}, nil, err
 		}
 		return DisableResult{Account: account, Changed: false}, nil, nil
+	}
+	hasGoals, err := savingsgoal.AccountHasActiveGoalsOrAllocations(ctx, tx, existing.id)
+	if err != nil {
+		return DisableResult{}, nil, err
+	}
+	if hasGoals {
+		return DisableResult{}, nil, &GoalActiveError{Account: account}
 	}
 	current, err := balanceInTx(ctx, tx, existing.id, existing.openingHundredths)
 	if err != nil {

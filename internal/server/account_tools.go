@@ -222,6 +222,15 @@ func (t *accountTools) mapAccountError(tool string, err error) (*mcp.CallToolRes
 			map[string]any{"account": balance.Account, "current_balance": balance.Account.CurrentBalance},
 		)))
 	}
+	var goalActive *account.GoalActiveError
+	if errors.As(err, &goalActive) {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(
+			contract.ErrorCodeAccountGoalActive,
+			fmt.Sprintf("Account '%s' has active savings goals or retained allocations.", goalActive.Account.Name),
+			false,
+			map[string]any{"account": goalActive.Account},
+		)))
+	}
 	if errors.Is(err, account.ErrInactive) {
 		return toolError(contract.NewErrorEnvelope(contract.NewError(
 			contract.ErrorCodeAccountInactive,

@@ -16,6 +16,7 @@ import (
 	"github.com/jordanp2002/local-finance-mcp/internal/merchant"
 	"github.com/jordanp2002/local-finance-mcp/internal/recurring"
 	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
+	"github.com/jordanp2002/local-finance-mcp/internal/savingsgoal"
 	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
 	"github.com/jordanp2002/local-finance-mcp/internal/summary"
 	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
@@ -47,6 +48,7 @@ func New(db *sql.DB, now func() time.Time, logger *log.Logger) *mcp.Server {
 	registerMerchantTools(srv, &merchant.Store{DB: db}, categoryStore, logger)
 	registerRecurringTools(srv, &recurring.Store{DB: db, Now: now}, logger)
 	registerRolloverTools(srv, &rollover.Store{DB: db, Now: now}, logger)
+	registerSavingsGoalTools(srv, &savingsgoal.Store{DB: db, Now: now}, logger)
 	registerSinkingFundTools(srv, &sinkingfund.Store{DB: db, Now: now}, logger)
 	registerSummaryTools(srv, &summary.Store{DB: db}, logger)
 	registerTransactionTools(srv, &transaction.Store{DB: db, Now: now}, logger)

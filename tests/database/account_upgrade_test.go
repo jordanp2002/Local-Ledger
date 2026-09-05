@@ -161,4 +161,27 @@ func TestMigrateAccountsUpgradePreservesRows(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("foreign_key_check rows: %v", err)
 	}
+
+	throughEleven := migrationSet(map[string]string{
+		"001_initial.sql":                 readRepoMigration(t, "001_initial.sql"),
+		"002_transaction_imports.sql":     readRepoMigration(t, "002_transaction_imports.sql"),
+		"003_transaction_idempotency.sql": readRepoMigration(t, "003_transaction_idempotency.sql"),
+		"004_recurring_transactions.sql":  readRepoMigration(t, "004_recurring_transactions.sql"),
+		"005_split_transactions.sql":      readRepoMigration(t, "005_split_transactions.sql"),
+		"006_budget_rollovers.sql":        readRepoMigration(t, "006_budget_rollovers.sql"),
+		"007_sinking_fund_periods.sql":    readRepoMigration(t, "007_sinking_fund_periods.sql"),
+		"008_accounts.sql":                readRepoMigration(t, "008_accounts.sql"),
+		"009_account_entries.sql":         readRepoMigration(t, "009_account_entries.sql"),
+		"010_account_transfers.sql":       readRepoMigration(t, "010_account_transfers.sql"),
+		"011_savings_goals.sql":           readRepoMigration(t, "011_savings_goals.sql"),
+	})
+	if err := database.MigrateFS(ctx, db, throughEleven); err != nil {
+		t.Fatalf("MigrateFS through 011: %v", err)
+	}
+	if got := migrationVersion(t, db); got != 11 {
+		t.Fatalf("version after 011 = %d, want 11", got)
+	}
+	if !tableExists(t, db, "savings_goals") || !tableExists(t, db, "savings_goal_entries") {
+		t.Fatal("savings goal tables missing after 011")
+	}
 }

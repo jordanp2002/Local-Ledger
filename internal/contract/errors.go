@@ -38,6 +38,11 @@ const (
 	ErrorCodeAccountTransferNotFound             ErrorCode = "account_transfer_not_found"
 	ErrorCodeAccountTransferAlreadyReversed      ErrorCode = "account_transfer_already_reversed"
 	ErrorCodeTransferDependencyConflict          ErrorCode = "transfer_dependency_conflict"
+	ErrorCodeSavingsGoalNotFound                 ErrorCode = "savings_goal_not_found"
+	ErrorCodeSavingsGoalAlreadyExists            ErrorCode = "savings_goal_already_exists"
+	ErrorCodeSavingsGoalClosed                   ErrorCode = "savings_goal_closed"
+	ErrorCodeSavingsGoalHasAllocations           ErrorCode = "savings_goal_has_allocations"
+	ErrorCodeAccountGoalActive                   ErrorCode = "account_goal_active"
 	ErrorCodeInternalError                       ErrorCode = "internal_error"
 )
 
@@ -203,6 +208,16 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The requested account transfer has already been reversed."
 	case ErrorCodeTransferDependencyConflict:
 		return "The account transfer has a dependent goal funding record and must be reversed through that goal."
+	case ErrorCodeSavingsGoalNotFound:
+		return "The requested savings goal was not found."
+	case ErrorCodeSavingsGoalAlreadyExists:
+		return "The savings goal already exists."
+	case ErrorCodeSavingsGoalClosed:
+		return "The savings goal is closed."
+	case ErrorCodeSavingsGoalHasAllocations:
+		return "The savings goal has allocated funds."
+	case ErrorCodeAccountGoalActive:
+		return "The account is referenced by an active savings goal or has retained allocations."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:
