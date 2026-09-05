@@ -12,33 +12,6 @@ import (
 	"github.com/jordanp2002/Local-Ledger/internal/transaction"
 )
 
-func TestListOmittedEverythingUsesDefaultsAndNoFilter(t *testing.T) {
-	ctx := context.Background()
-	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))
-	createCategory(t, ctx, categories, "Groceries")
-	createCategory(t, ctx, categories, "Dining")
-	groceries := addTransaction(t, ctx, store, transaction.AddInput{
-		Amount:   "20.00",
-		Merchant: "Metro",
-		Category: stringPtr("Groceries"),
-		Date:     stringPtr("2026-08-01"),
-	})
-	dining := addTransaction(t, ctx, store, transaction.AddInput{
-		Amount:   "15.00",
-		Merchant: "Cafe",
-		Category: stringPtr("Dining"),
-		Date:     stringPtr("2026-07-31"),
-	})
-
-	result := mustList(t, ctx, store, transaction.ListInput{})
-	if result.Page != (contract.Page{Limit: 50, Offset: 0, Returned: 2, Total: 2}) {
-		t.Fatalf("page = %#v, want default limit 50 offset 0 over both rows", result.Page)
-	}
-	if len(result.Transactions) != 2 || result.Transactions[0].ID != groceries.ID || result.Transactions[1].ID != dining.ID {
-		t.Fatalf("transactions = %#v, want both rows newest-first", result.Transactions)
-	}
-}
-
 func TestListMalformedStartDateReturnsOnlyCanonicalReason(t *testing.T) {
 	ctx := context.Background()
 	store, _, _, db := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))

@@ -176,7 +176,7 @@ func (t *transactionTools) addTransaction(ctx context.Context, _ *mcp.CallToolRe
 		IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidTransactionInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapTransactionError("add_transaction", err)
@@ -205,7 +205,7 @@ func (t *transactionTools) addSplitTransaction(ctx context.Context, _ *mcp.CallT
 		IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidTransactionInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapTransactionError("add_split_transaction", err)
@@ -237,7 +237,7 @@ func (t *transactionTools) addTransactions(ctx context.Context, _ *mcp.CallToolR
 		Transactions:   rows,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidTransactionInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapTransactionError("add_transactions", err)
@@ -245,7 +245,7 @@ func (t *transactionTools) addTransactions(ctx context.Context, _ *mcp.CallToolR
 
 	totalAmount, err := contract.FormatAmount(result.TotalHundredths)
 	if err != nil {
-		return t.internalError("add_transactions", err)
+		return internalToolError(t.logger, "add_transactions", err)
 	}
 
 	items := make([]addTransactionsRowOutput, len(result.Transactions))
@@ -270,12 +270,12 @@ func (t *transactionTools) addTransactions(ctx context.Context, _ *mcp.CallToolR
 func (t *transactionTools) updateTransaction(ctx context.Context, req *mcp.CallToolRequest, in updateTransactionInput) (*mcp.CallToolResult, any, error) {
 	updateIn, err := updateInputFromRequest(req, in)
 	if err != nil {
-		return t.internalError("update_transaction", err)
+		return internalToolError(t.logger, "update_transaction", err)
 	}
 
 	result, fields, err := t.store.Update(ctx, updateIn)
 	if len(fields) != 0 {
-		return toolError(invalidTransactionInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapTransactionError("update_transaction", err)
@@ -291,7 +291,7 @@ func (t *transactionTools) updateTransaction(ctx context.Context, req *mcp.CallT
 func (t *transactionTools) removeTransaction(ctx context.Context, _ *mcp.CallToolRequest, in removeTransactionInput) (*mcp.CallToolResult, any, error) {
 	removed, fields, err := t.store.Remove(ctx, in.ID)
 	if len(fields) != 0 {
-		return toolError(invalidTransactionInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapTransactionError("remove_transaction", err)
@@ -313,7 +313,7 @@ func (t *transactionTools) listTransactions(ctx context.Context, _ *mcp.CallTool
 		Offset:    in.Offset,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidTransactionInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapTransactionError("list_transactions", err)
@@ -424,7 +424,7 @@ func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.Cal
 		case "add_transactions":
 			field = "transactions"
 		}
-		return toolError(invalidTransactionInputEnvelope([]contract.FieldIssue{{
+		return toolError(invalidInputEnvelope([]contract.FieldIssue{{
 			Field:  field,
 			Reason: "would make category spending exceed the supported amount range",
 		}}))
@@ -435,16 +435,7 @@ func (t *transactionTools) mapTransactionError(tool string, err error) (*mcp.Cal
 		return toolError(dependencyConflictEnvelope(dependency))
 	}
 
-	return t.internalError(tool, err)
-}
-
-func invalidTransactionInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
+	return internalToolError(t.logger, tool, err)
 }
 
 func idempotencyConflictEnvelope(tool string, conflict *transaction.IdempotencyConflictError) contract.ErrorEnvelope {
@@ -484,13 +475,6 @@ func withDetailIndex(envelope contract.ErrorEnvelope, index int) contract.ErrorE
 	details["index"] = index
 	envelope.Error.Details = details
 	return envelope
-}
-
-func (t *transactionTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
 }
 
 func nonNilRolloverOffers(offers []contract.RolloverOffer) []contract.RolloverOffer {

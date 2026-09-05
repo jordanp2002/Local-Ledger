@@ -5,28 +5,21 @@ import (
 	"database/sql"
 	"errors"
 	"math"
-	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/jordanp2002/Local-Ledger/internal/account"
 	"github.com/jordanp2002/Local-Ledger/internal/contract"
-	"github.com/jordanp2002/Local-Ledger/internal/database"
 	"github.com/jordanp2002/Local-Ledger/internal/savingsgoal"
+	"github.com/jordanp2002/Local-Ledger/tests/testutil"
 )
 
 var fixedNow = time.Date(2026, 9, 1, 14, 30, 0, 0, time.UTC)
 
 func openTestStores(t *testing.T, now time.Time) (*sql.DB, *account.Store, *savingsgoal.Store) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "finance.db")
-	db, err := database.Open(context.Background(), path)
-	if err != nil {
-		t.Fatalf("database.Open: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
+	db := testutil.OpenDB(t)
 	acctStore := &account.Store{DB: db, Now: func() time.Time { return now }}
 	goalStore := &savingsgoal.Store{DB: db, Now: func() time.Time { return now }}
 	return db, acctStore, goalStore
@@ -460,6 +453,48 @@ func TestListSavingsGoalsFiltersAndOrdering(t *testing.T) {
 	completedOnly, _, _ := goalStore.List(context.Background(), savingsgoal.ListInput{Status: strPtr("completed")})
 	if len(completedOnly) != 1 || completedOnly[0].Name != "Completed Goal" {
 		t.Fatalf("expected 1 completed goal, got %v", completedOnly)
+	}
+	for _, includeClosed := range []bool{false, true} {
+		overview, err := goalStore.Overview(context.Background(), false, includeClosed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := activeOnly
+		if includeClosed {
+			want = allGoals
+		}
+		if !reflect.DeepEqual(overview.Goals, want) {
+			t.Fatalf("overview goals = %#v, want %#v", overview.Goals, want)
+		}
+	}
+	if _, err := db.Exec("UPDATE accounts SET active = 0 WHERE id = ?", acct2.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, includeInactive := range []bool{false, true} {
+		overview, err := goalStore.Overview(context.Background(), includeInactive, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantAccounts, wantGoals := 1, 4
+		if includeInactive {
+			wantAccounts, wantGoals = 2, 6
+		}
+		if len(overview.Accounts) != wantAccounts || len(overview.Goals) != wantGoals {
+			t.Fatalf("overview includes wrong accounts/goals: %#v", overview)
+		}
+	}
+}
+
+func TestSavingsOverviewRejectsTotalOverflow(t *testing.T) {
+	for _, balance := range []string{"92233720368547758.07", "-92233720368547758.07"} {
+		t.Run(balance, func(t *testing.T) {
+			_, accounts, goals := openTestStores(t, fixedNow)
+			mustCreateAccount(t, accounts, "First", "savings", balance)
+			mustCreateAccount(t, accounts, "Second", "savings", balance)
+			if _, err := goals.Overview(context.Background(), false, false); err == nil {
+				t.Fatal("overview should reject overflowing totals")
+			}
+		})
 	}
 }
 

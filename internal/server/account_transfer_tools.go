@@ -93,7 +93,7 @@ func (t *accountTools) transferBetweenAccounts(ctx context.Context, req *mcp.Cal
 		IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("transfer_between_accounts", err)
@@ -112,7 +112,7 @@ func (t *accountTools) listAccountTransfers(ctx context.Context, _ *mcp.CallTool
 		EndDate: in.EndDate, Status: in.Status, Limit: in.Limit, Offset: in.Offset,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("list_account_transfers", err)
@@ -135,7 +135,7 @@ func (t *accountTools) reverseAccountTransfer(ctx context.Context, req *mcp.Call
 		TransferID: in.ID, Note: in.Note, NotePresent: notePresent, IdempotencyKey: in.IdempotencyKey,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidAccountInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapAccountError("reverse_account_transfer", err)

@@ -55,6 +55,34 @@ func TestListEmptyDatabaseReturnsEmptyNonNilPage(t *testing.T) {
 	assertEmptyPage(t, result, 50, 0, 0)
 }
 
+func TestListSplitPageKeepsAllAllocationsAndParentOrder(t *testing.T) {
+	ctx := context.Background()
+	store, categories, _, db := openTransactionStore(t, torontoTime(t, 2026, 8, 30, 12, 0))
+	createCategory(t, ctx, categories, "Groceries")
+	createCategory(t, ctx, categories, "Household")
+	older := addSplitTransaction(t, ctx, store, transaction.AddSplitInput{
+		Merchant: "Store", Date: stringPtr("2026-08-01"),
+		Allocations: []transaction.AllocationInput{{Category: "Household", Amount: "5.00"}, {Category: "Groceries", Amount: "10.00"}},
+	})
+	newer := addTransaction(t, ctx, store, transaction.AddInput{
+		Merchant: "Store", Date: stringPtr("2026-08-02"), Amount: "2.00", Category: stringPtr("Groceries"),
+	})
+	result := mustList(t, ctx, store, transaction.ListInput{Category: stringPtr("Groceries"), Limit: int64Ptr(1), Offset: int64Ptr(1)})
+	if !reflect.DeepEqual(result.Transactions, []contract.Transaction{older}) || result.Page.Total != 2 {
+		t.Fatalf("split page = %#v, want full older split and total 2", result)
+	}
+	result = mustList(t, ctx, store, transaction.ListInput{})
+	if !reflect.DeepEqual(result.Transactions, []contract.Transaction{newer, older}) {
+		t.Fatalf("mixed page = %#v", result.Transactions)
+	}
+	if _, err := db.Exec("DELETE FROM transaction_allocations WHERE transaction_id = ?", older.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.List(ctx, transaction.ListInput{}); err == nil {
+		t.Fatal("listing a parent without allocations should fail")
+	}
+}
+
 func TestListUnfilteredIncludesInactiveCategoryRows(t *testing.T) {
 	ctx := context.Background()
 	store, categories, _, _ := openTransactionStore(t, torontoTime(t, 2026, 8, 15, 12, 0))

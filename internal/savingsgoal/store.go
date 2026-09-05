@@ -526,34 +526,7 @@ func (s *Store) List(ctx context.Context, in ListInput) ([]contract.SavingsGoal,
 		whereClause = "WHERE " + strings.Join(conds, " AND ")
 	}
 
-	query := fmt.Sprintf(`
-		SELECT
-			g.id,
-			g.name,
-			g.account_id,
-			a.name AS account_name,
-			g.target_amount_hundredths,
-			g.target_date,
-			g.note,
-			g.status,
-			g.completed_at,
-			g.cancelled_at,
-			g.created_at,
-			g.updated_at,
-			COALESCE(SUM(e.delta_hundredths), 0) AS current_amount_hundredths
-		FROM savings_goals g
-		JOIN accounts a ON a.id = g.account_id
-		LEFT JOIN savings_goal_entries e ON e.goal_id = g.id
-		%s
-		GROUP BY g.id
-		ORDER BY
-			CASE WHEN g.status = 'active' THEN 0 ELSE 1 END ASC,
-			CASE WHEN g.status = 'active' AND g.target_date IS NULL THEN 1 ELSE 0 END ASC,
-			CASE WHEN g.status = 'active' THEN g.target_date END ASC,
-			CASE WHEN g.status != 'active' THEN COALESCE(g.completed_at, g.cancelled_at, g.updated_at) END DESC,
-			g.name COLLATE NOCASE ASC,
-			g.id ASC
-	`, whereClause)
+	query := goalSelect + whereClause + " GROUP BY g.id " + goalOrder
 
 	rows, err := s.DB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -563,36 +536,11 @@ func (s *Store) List(ctx context.Context, in ListInput) ([]contract.SavingsGoal,
 
 	goals := make([]contract.SavingsGoal, 0)
 	for rows.Next() {
-		var (
-			id                     int64
-			name                   string
-			accountID              int64
-			accountName            string
-			targetAmountHundredths int64
-			targetDate             sql.NullString
-			note                   sql.NullString
-			status                 string
-			completedAt            sql.NullString
-			cancelledAt            sql.NullString
-			createdAt              string
-			updatedAt              string
-			currentAmount          int64
-		)
-		err = rows.Scan(
-			&id, &name, &accountID, &accountName, &targetAmountHundredths,
-			&targetDate, &note, &status, &completedAt, &cancelledAt,
-			&createdAt, &updatedAt, &currentAmount,
-		)
+		row, err := scanGoal(rows)
 		if err != nil {
 			return nil, nil, err
 		}
-
-		goal, err := buildGoal(goalValues{
-			id: id, name: name, accountID: accountID, account: accountName,
-			targetAmount: targetAmountHundredths, targetDate: nullableStringValue(targetDate), status: status,
-			note: nullableStringValue(note), createdAt: createdAt, updatedAt: updatedAt,
-			completedAt: nullableStringValue(completedAt), cancelledAt: nullableStringValue(cancelledAt),
-		}, currentAmount)
+		goal, err := buildGoal(row.values, row.current)
 		if err != nil {
 			return nil, nil, err
 		}

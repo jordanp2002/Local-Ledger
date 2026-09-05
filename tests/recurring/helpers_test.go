@@ -3,29 +3,18 @@ package recurring_test
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jordanp2002/Local-Ledger/internal/category"
 	"github.com/jordanp2002/Local-Ledger/internal/contract"
-	"github.com/jordanp2002/Local-Ledger/internal/database"
 	"github.com/jordanp2002/Local-Ledger/internal/recurring"
+	"github.com/jordanp2002/Local-Ledger/tests/testutil"
 )
 
 func openRecurringStore(t *testing.T) (*recurring.Store, *category.Store, *sql.DB) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "finance.db")
-	db, err := database.Open(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Open(%q) error = %v", path, err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
-			t.Errorf("close database: %v", err)
-		}
-	})
+	db := testutil.OpenDB(t)
 	toronto := time.FixedZone("EDT", -4*60*60)
 	now := func() time.Time { return time.Date(2026, 8, 30, 8, 0, 0, 0, toronto) }
 	return &recurring.Store{DB: db, Now: now}, &category.Store{DB: db, Now: now}, db

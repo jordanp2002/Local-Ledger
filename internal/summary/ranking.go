@@ -119,8 +119,7 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 	byMerchant := make(map[string]*merchantTotals)
 	var total int64
 	var count int64
-	seenTransactions := make(map[int64]struct{})
-	seenByMerchant := make(map[string]map[int64]struct{})
+	var previousTransactionID int64
 	for rows.Next() {
 		var transactionID int64
 		var merchant string
@@ -134,11 +133,6 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 			return TopMerchantsResult{}, nil, fmtOverflow("spending")
 		}
 		total = next
-		if _, seen := seenTransactions[transactionID]; !seen {
-			seenTransactions[transactionID] = struct{}{}
-			count++
-		}
-
 		key := merchantNoCaseKey(merchant)
 		group, exists := byMerchant[key]
 		if !exists {
@@ -150,13 +144,10 @@ func (s *Store) topMerchants(ctx context.Context, in validatedTopMerchants) (Top
 			return TopMerchantsResult{}, nil, fmtOverflow("spending")
 		}
 		group.total = nextGroupTotal
-		seen, exists := seenByMerchant[key]
-		if !exists {
-			seen = make(map[int64]struct{})
-			seenByMerchant[key] = seen
-		}
-		if _, exists := seen[transactionID]; !exists {
-			seen[transactionID] = struct{}{}
+		// The query keeps each transaction's allocations adjacent.
+		if count == 0 || transactionID != previousTransactionID {
+			previousTransactionID = transactionID
+			count++
 			group.count++
 		}
 	}

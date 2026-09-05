@@ -107,22 +107,22 @@ func (t *merchantTools) setKnownMerchant(ctx context.Context, _ *mcp.CallToolReq
 			if inactiveCategory.Name == "" {
 				var inactive *merchant.CategoryInactiveError
 				if !errors.As(err, &inactive) {
-					return t.internalError("set_known_merchant", err)
+					return internalToolError(t.logger, "set_known_merchant", err)
 				}
 				inactiveCategory = inactive.Category
 			}
 			if inactiveCategory.Name == "" {
-				return t.internalError("set_known_merchant", err)
+				return internalToolError(t.logger, "set_known_merchant", err)
 			}
 			return t.categoryInactive(ctx, inactiveCategory)
 		case errors.Is(err, merchant.ErrInvalidMerchant), errors.Is(err, merchant.ErrInvalidCategory):
 			var validation *merchant.ValidationError
 			if errors.As(err, &validation) {
-				return toolError(invalidMerchantInputEnvelope(validation.Fields))
+				return toolError(invalidInputEnvelope(validation.Fields))
 			}
-			return t.internalError("set_known_merchant", err)
+			return internalToolError(t.logger, "set_known_merchant", err)
 		default:
-			return t.internalError("set_known_merchant", err)
+			return internalToolError(t.logger, "set_known_merchant", err)
 		}
 	}
 
@@ -141,10 +141,10 @@ func (t *merchantTools) listKnownMerchants(ctx context.Context, _ *mcp.CallToolR
 		Offset: in.Offset,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidMerchantInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
-		return t.internalError("list_known_merchants", err)
+		return internalToolError(t.logger, "list_known_merchants", err)
 	}
 
 	knownMerchants := result.KnownMerchants
@@ -166,13 +166,13 @@ func (t *merchantTools) renameKnownMerchant(ctx context.Context, _ *mcp.CallTool
 		var collision *merchant.AlreadyExistsError
 		switch {
 		case errors.As(err, &validation):
-			return toolError(invalidMerchantInputEnvelope(validation.Fields))
+			return toolError(invalidInputEnvelope(validation.Fields))
 		case errors.As(err, &notFound):
 			return knownMerchantNotFoundEnvelope(notFound.Requested)
 		case errors.As(err, &collision):
 			return knownMerchantAlreadyExistsEnvelope(collision.KnownMerchant)
 		default:
-			return t.internalError("rename_known_merchant", err)
+			return internalToolError(t.logger, "rename_known_merchant", err)
 		}
 	}
 
@@ -191,11 +191,11 @@ func (t *merchantTools) removeKnownMerchant(ctx context.Context, _ *mcp.CallTool
 		var notFound *merchant.NotFoundError
 		switch {
 		case errors.As(err, &validation):
-			return toolError(invalidMerchantInputEnvelope(validation.Fields))
+			return toolError(invalidInputEnvelope(validation.Fields))
 		case errors.As(err, &notFound):
 			return knownMerchantNotFoundEnvelope(notFound.Requested)
 		default:
-			return t.internalError("remove_known_merchant", err)
+			return internalToolError(t.logger, "remove_known_merchant", err)
 		}
 	}
 
@@ -223,19 +223,10 @@ func knownMerchantAlreadyExistsEnvelope(conflict contract.KnownMerchant) (*mcp.C
 	)))
 }
 
-func invalidMerchantInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
-}
-
 func (t *merchantTools) categoryNotFound(ctx context.Context, requested string) (*mcp.CallToolResult, any, error) {
 	categories, err := t.categories.List(ctx)
 	if err != nil {
-		return t.internalError("set_known_merchant", err)
+		return internalToolError(t.logger, "set_known_merchant", err)
 	}
 
 	return toolError(contract.NewErrorEnvelope(contract.NewError(
@@ -252,7 +243,7 @@ func (t *merchantTools) categoryNotFound(ctx context.Context, requested string) 
 func (t *merchantTools) categoryInactive(ctx context.Context, inactive contract.Category) (*mcp.CallToolResult, any, error) {
 	categories, err := t.categories.List(ctx)
 	if err != nil {
-		return t.internalError("set_known_merchant", err)
+		return internalToolError(t.logger, "set_known_merchant", err)
 	}
 
 	return toolError(contract.NewErrorEnvelope(contract.NewError(
@@ -264,11 +255,4 @@ func (t *merchantTools) categoryInactive(ctx context.Context, inactive contract.
 			"active_categories": activeCategories(categories),
 		},
 	)))
-}
-
-func (t *merchantTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
 }

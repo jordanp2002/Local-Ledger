@@ -138,7 +138,7 @@ func (t *savingsGoalTools) release(ctx context.Context, _ *mcp.CallToolRequest, 
 }
 func (t *savingsGoalTools) goalMutation(tool string, r savingsgoal.GoalMutationResult, f []contract.FieldIssue, e error) (*mcp.CallToolResult, any, error) {
 	if len(f) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(f))
+		return toolError(invalidInputEnvelope(f))
 	}
 	if e != nil {
 		return t.mapSavingsGoalError(tool, e)
@@ -154,7 +154,7 @@ func (t *savingsGoalTools) goalMutation(tool string, r savingsgoal.GoalMutationR
 func (t *savingsGoalTools) fund(ctx context.Context, _ *mcp.CallToolRequest, in fundSavingsGoalInput) (*mcp.CallToolResult, any, error) {
 	r, f, e := t.store.Fund(ctx, savingsgoal.FundingInput{GoalID: in.GoalID, SourceAccountID: in.SourceAccountID, Amount: in.Amount, Date: in.Date, Note: in.Note, IdempotencyKey: in.IdempotencyKey})
 	if len(f) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(f))
+		return toolError(invalidInputEnvelope(f))
 	}
 	if e != nil {
 		return t.mapSavingsGoalError("fund_savings_goal", e)
@@ -167,7 +167,7 @@ func (t *savingsGoalTools) fund(ctx context.Context, _ *mcp.CallToolRequest, in 
 func (t *savingsGoalTools) reverseFunding(ctx context.Context, _ *mcp.CallToolRequest, in reverseFundingInput) (*mcp.CallToolResult, any, error) {
 	r, f, e := t.store.ReverseFunding(ctx, savingsgoal.ReverseFundingInput{EntryID: in.EntryID, Note: in.Note, IdempotencyKey: in.IdempotencyKey})
 	if len(f) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(f))
+		return toolError(invalidInputEnvelope(f))
 	}
 	if e != nil {
 		return t.mapSavingsGoalError("reverse_savings_goal_funding", e)
@@ -195,7 +195,7 @@ func (t *savingsGoalTools) lifecycle(ctx context.Context, id int64, complete boo
 		r, f, e = t.store.Cancel(ctx, id)
 	}
 	if len(f) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(f))
+		return toolError(invalidInputEnvelope(f))
 	}
 	if e != nil {
 		return t.mapSavingsGoalError(tool, e)
@@ -225,7 +225,7 @@ func (t *savingsGoalTools) createSavingsGoal(ctx context.Context, _ *mcp.CallToo
 		Note:         in.Note,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSavingsGoalError("create_savings_goal", err)
@@ -266,7 +266,7 @@ func (t *savingsGoalTools) updateSavingsGoal(ctx context.Context, req *mcp.CallT
 		AccountIDNull:     accountIDNull,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSavingsGoalError("update_savings_goal", err)
@@ -282,7 +282,7 @@ func (t *savingsGoalTools) listSavingsGoals(ctx context.Context, _ *mcp.CallTool
 		IncludeClosed: in.IncludeClosed,
 	})
 	if len(fields) > 0 {
-		return toolError(invalidSavingsGoalInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapSavingsGoalError("list_savings_goals", err)
@@ -371,17 +371,5 @@ func (t *savingsGoalTools) mapSavingsGoalError(tool string, err error) (*mcp.Cal
 			map[string]any{},
 		)))
 	}
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
-}
-
-func invalidSavingsGoalInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
-	))
+	return internalToolError(t.logger, tool, err)
 }

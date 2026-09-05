@@ -176,22 +176,30 @@ func (s *Store) list(ctx context.Context, in validatedList) (ListResult, []contr
 	defer rows.Close()
 
 	transactions := make([]contract.Transaction, 0)
+	ids := make([]int64, 0)
 	for rows.Next() {
 		recorded, err := scanTransactionParent(rows)
 		if err != nil {
 			return ListResult{}, nil, err
 		}
-		allocations, err := loadAllocations(ctx, tx, recorded.ID)
-		if err == nil {
-			recorded, err = withTransactionAllocations(recorded, allocations)
-		}
-		if err != nil {
-			return ListResult{}, nil, err
-		}
 		transactions = append(transactions, recorded)
+		ids = append(ids, recorded.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return ListResult{}, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return ListResult{}, nil, err
+	}
+	allocations, err := loadAllocations(ctx, tx, ids)
+	if err != nil {
+		return ListResult{}, nil, err
+	}
+	for i, recorded := range transactions {
+		transactions[i], err = withTransactionAllocations(recorded, allocations[recorded.ID])
+		if err != nil {
+			return ListResult{}, nil, err
+		}
 	}
 
 	returned := int64(len(transactions))

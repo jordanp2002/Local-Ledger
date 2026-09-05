@@ -84,7 +84,7 @@ func (t *rolloverTools) createBudgetRollover(ctx context.Context, _ *mcp.CallToo
 		Note:                in.Note,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidRolloverInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRolloverError("create_budget_rollover", err)
@@ -101,7 +101,7 @@ func (t *rolloverTools) listBudgetRollovers(ctx context.Context, _ *mcp.CallTool
 		Offset:      in.Offset,
 	})
 	if len(fields) != 0 {
-		return toolError(invalidRolloverInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRolloverError("list_budget_rollovers", err)
@@ -116,7 +116,7 @@ func (t *rolloverTools) listBudgetRollovers(ctx context.Context, _ *mcp.CallTool
 func (t *rolloverTools) removeBudgetRollover(ctx context.Context, _ *mcp.CallToolRequest, in removeBudgetRolloverInput) (*mcp.CallToolResult, any, error) {
 	removed, fields, err := t.store.Remove(ctx, in.ID)
 	if len(fields) != 0 {
-		return toolError(invalidRolloverInputEnvelope(fields))
+		return toolError(invalidInputEnvelope(fields))
 	}
 	if err != nil {
 		return t.mapRolloverError("remove_budget_rollover", err)
@@ -208,7 +208,7 @@ func (t *rolloverTools) mapRolloverError(tool string, err error) (*mcp.CallToolR
 		)))
 	}
 
-	return t.internalError(tool, err)
+	return internalToolError(t.logger, tool, err)
 }
 
 func dependencyConflictEnvelope(dependency *rollover.DependencyConflictError) contract.ErrorEnvelope {
@@ -220,15 +220,6 @@ func dependencyConflictEnvelope(dependency *rollover.DependencyConflictError) co
 			"rollover_ids": dependency.RolloverIDs,
 			"conflicts":    rolloverConflicts(dependency.Conflicts),
 		},
-	))
-}
-
-func invalidRolloverInputEnvelope(fields []contract.FieldIssue) contract.ErrorEnvelope {
-	return contract.NewErrorEnvelope(contract.NewError(
-		contract.ErrorCodeInvalidInput,
-		"",
-		false,
-		map[string]any{"fields": fields},
 	))
 }
 
@@ -260,11 +251,4 @@ func rolloverConflicts(conflicts []rollover.Conflict) []map[string]any {
 		})
 	}
 	return result
-}
-
-func (t *rolloverTools) internalError(tool string, err error) (*mcp.CallToolResult, any, error) {
-	if t.logger != nil {
-		t.logger.Printf("%s: %v", tool, err)
-	}
-	return toolError(contract.NewInternalErrorEnvelope())
 }

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	_ "modernc.org/sqlite"
 )
 
 const sqliteDriverName = "sqlite"

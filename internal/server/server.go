@@ -64,16 +64,5 @@ func Run(ctx context.Context, config Config) error {
 	logger := log.New(os.Stderr, "local-ledger: ", 0)
 	runErr := New(db, time.Now, logger).Run(ctx, &mcp.StdioTransport{})
 	closeErr := db.Close()
-	return joinRunAndCloseErrors(runErr, closeErr)
-}
-
-func joinRunAndCloseErrors(runErr, closeErr error) error {
-	switch {
-	case runErr != nil && closeErr != nil:
-		return errors.Join(runErr, closeErr)
-	case runErr != nil:
-		return runErr
-	default:
-		return closeErr
-	}
+	return errors.Join(runErr, closeErr)
 }
