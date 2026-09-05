@@ -173,3 +173,63 @@ func TestSavingsGoalToolErrorsAndGuards(t *testing.T) {
 		t.Fatalf("expected savings_goal_closed, got %s", structuredJSON(t, closedGoal))
 	}
 }
+
+func TestSavingsGoalFundingLifecycleAndOverview(t *testing.T) {
+	db := openCategoryDB(t)
+	session := connectCategorySession(t, db, fixedTransactionNow, nil)
+	savings := callTool(t, session, "create_account", map[string]any{"name": "Savings", "type": "savings", "opening_balance": "500.00"})
+	checking := callTool(t, session, "create_account", map[string]any{"name": "Checking", "type": "checking", "opening_balance": "300.00"})
+	savingsID := int64(objectField(t, structuredObject(t, savings), "account")["id"].(float64))
+	checkingID := int64(objectField(t, structuredObject(t, checking), "account")["id"].(float64))
+	created := callTool(t, session, "create_savings_goal", map[string]any{"name": "Japan", "account_id": savingsID, "target_amount": "300.00"})
+	goalID := int64(objectField(t, structuredObject(t, created), "goal")["id"].(float64))
+
+	allocated := callTool(t, session, "allocate_to_savings_goal", map[string]any{"goal_id": goalID, "amount": "200.00", "date": "2026-08-14", "idempotency_key": "japan-existing"})
+	if allocated.IsError || objectField(t, structuredObject(t, allocated), "goal")["current_amount"] != "200.00" {
+		t.Fatalf("allocate = %s", structuredJSON(t, allocated))
+	}
+	replay := callTool(t, session, "allocate_to_savings_goal", map[string]any{"goal_id": goalID, "amount": "200.00", "date": "2026-08-14", "idempotency_key": "japan-existing"})
+	if replay.IsError || structuredObject(t, replay)["idempotent_replay"] != true {
+		t.Fatalf("allocation replay = %s", structuredJSON(t, replay))
+	}
+
+	funded := callTool(t, session, "fund_savings_goal", map[string]any{"goal_id": goalID, "source_account_id": checkingID, "amount": "100.00", "date": "2026-08-14", "idempotency_key": "japan-fund"})
+	if funded.IsError {
+		t.Fatalf("fund = %s", structuredJSON(t, funded))
+	}
+	fundResult := structuredObject(t, funded)
+	if fundResult["source_balance"] != "200.00" || fundResult["destination_balance"] != "600.00" || fundResult["executed_externally"] != false {
+		t.Fatalf("fund result = %v", fundResult)
+	}
+	transferID := int64(fundResult["transfer"].(map[string]any)["id"].(float64))
+
+	blocked := callTool(t, session, "reverse_account_transfer", map[string]any{"id": transferID, "idempotency_key": "generic-reverse"})
+	if !blocked.IsError || structuredObject(t, blocked)["error"].(map[string]any)["code"] != "transfer_dependency_conflict" {
+		t.Fatalf("generic reverse = %s", structuredJSON(t, blocked))
+	}
+	completed := callTool(t, session, "complete_savings_goal", map[string]any{"goal_id": goalID})
+	if completed.IsError || objectField(t, structuredObject(t, completed), "goal")["status"] != "completed" {
+		t.Fatalf("complete = %s", structuredJSON(t, completed))
+	}
+	released := callTool(t, session, "release_savings_goal_funds", map[string]any{"goal_id": goalID, "amount": "50.00", "date": "2026-08-14", "idempotency_key": "japan-release"})
+	if released.IsError || objectField(t, structuredObject(t, released), "goal")["current_amount"] != "250.00" {
+		t.Fatalf("release = %s", structuredJSON(t, released))
+	}
+
+	var entryID int64
+	if err := db.QueryRow("SELECT id FROM savings_goal_entries WHERE transfer_id = ? AND kind = 'transfer_funding'", transferID).Scan(&entryID); err != nil {
+		t.Fatalf("funding entry: %v", err)
+	}
+	reversed := callTool(t, session, "reverse_savings_goal_funding", map[string]any{"entry_id": entryID, "idempotency_key": "japan-fund-reverse"})
+	if reversed.IsError {
+		t.Fatalf("reverse funding = %s", structuredJSON(t, reversed))
+	}
+	overview := callTool(t, session, "get_savings_overview", map[string]any{"include_closed_goals": true})
+	if overview.IsError {
+		t.Fatalf("overview = %s", structuredJSON(t, overview))
+	}
+	gotOverview := objectField(t, structuredObject(t, overview), "overview")
+	if gotOverview["total_balance"] != "800.00" || gotOverview["total_allocated"] != "150.00" || gotOverview["total_unallocated"] != "650.00" {
+		t.Fatalf("overview totals = %v", gotOverview)
+	}
+}

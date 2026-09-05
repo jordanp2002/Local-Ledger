@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/savingsgoal"
 )
 
 var (
@@ -481,7 +480,12 @@ func (s *Store) Disable(ctx context.Context, id int64) (DisableResult, []contrac
 		}
 		return DisableResult{Account: account, Changed: false}, nil, nil
 	}
-	hasGoals, err := savingsgoal.AccountHasActiveGoalsOrAllocations(ctx, tx, existing.id)
+	var goalDependency int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM savings_goals g WHERE g.account_id=? AND (g.status='active' OR (g.status='completed' AND (SELECT COALESCE(SUM(e.delta_hundredths),0) FROM savings_goal_entries e WHERE e.goal_id=g.id)>0)) LIMIT 1`, existing.id).Scan(&goalDependency)
+	hasGoals := err == nil
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
 	if err != nil {
 		return DisableResult{}, nil, err
 	}
