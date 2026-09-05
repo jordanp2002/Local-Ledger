@@ -1,4 +1,4 @@
-module github.com/jordanp2002/local-finance-mcp
+module github.com/jordanp2002/Local-Ledger
 
 go 1.26
 

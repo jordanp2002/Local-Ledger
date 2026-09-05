@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/recurring"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/recurring"
 )
 
 func TestCreateRecurringTransactionSuccess(t *testing.T) {

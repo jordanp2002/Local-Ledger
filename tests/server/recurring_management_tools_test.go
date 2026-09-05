@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
 
 func TestRecurringManagementToolDiscoveryAndSchemas(t *testing.T) {

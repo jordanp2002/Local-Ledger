@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
-	"github.com/jordanp2002/local-finance-mcp/internal/server"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -23,8 +23,8 @@ func TestStdioLifecycle(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "finance.db")
 	cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
 	cmd.Env = testEnvironment(
-		"LOCAL_FINANCE_MCP_TEST_HELPER=1",
-		"LOCAL_FINANCE_DB_PATH="+databasePath,
+		"LOCAL_LEDGER_TEST_HELPER=1",
+		"LOCAL_LEDGER_DB_PATH="+databasePath,
 	)
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.1.0"}, nil)
@@ -38,7 +38,7 @@ func TestStdioLifecycle(t *testing.T) {
 			closeSession(t, session)
 		}
 	}()
-	if result := session.InitializeResult(); result == nil || result.ServerInfo == nil || result.ServerInfo.Name != "local-finance-mcp" || result.ServerInfo.Version != "0.2.0" {
+	if result := session.InitializeResult(); result == nil || result.ServerInfo == nil || result.ServerInfo.Name != "local-ledger" || result.ServerInfo.Version != "0.2.0" {
 		t.Fatalf("unexpected initialize result: %#v", result)
 	}
 
@@ -356,11 +356,11 @@ func closeSession(t *testing.T, session *mcp.ClientSession) {
 }
 
 func TestHelperProcess(t *testing.T) {
-	if os.Getenv("LOCAL_FINANCE_MCP_TEST_HELPER") != "1" {
+	if os.Getenv("LOCAL_LEDGER_TEST_HELPER") != "1" {
 		return
 	}
 
-	if err := server.Run(context.Background(), server.Config{DatabasePath: os.Getenv("LOCAL_FINANCE_DB_PATH")}); err != nil {
+	if err := server.Run(context.Background(), server.Config{DatabasePath: os.Getenv("LOCAL_LEDGER_DB_PATH")}); err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)

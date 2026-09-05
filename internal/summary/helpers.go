@@ -8,8 +8,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/sinkingfund"
 )
 
 const categoryColumns = `id, name, active, created_at, updated_at`

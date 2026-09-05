@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/account"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/account"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

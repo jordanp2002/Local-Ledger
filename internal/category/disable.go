@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
-	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/rollover"
+	"github.com/jordanp2002/Local-Ledger/internal/sinkingfund"
 )
 
 func (s *Store) Disable(ctx context.Context, name string) (contract.Category, bool, *contract.Budget, error) {

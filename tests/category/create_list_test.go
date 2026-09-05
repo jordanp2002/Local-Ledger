@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/category"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/category"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
 
 func TestListEmptyDatabase(t *testing.T) {

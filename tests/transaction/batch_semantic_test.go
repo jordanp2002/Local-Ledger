@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/transaction"
 )
 
 func TestAddBatchSemanticValidation(t *testing.T) {

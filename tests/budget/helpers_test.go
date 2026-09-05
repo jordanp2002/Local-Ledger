@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/budget"
-	"github.com/jordanp2002/local-finance-mcp/internal/category"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/budget"
+	"github.com/jordanp2002/Local-Ledger/internal/category"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
 )
 
 func openBudgetStore(t *testing.T, now time.Time) (*budget.Store, *category.Store, *sql.DB) {

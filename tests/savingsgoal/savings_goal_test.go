@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/account"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
-	"github.com/jordanp2002/local-finance-mcp/internal/savingsgoal"
+	"github.com/jordanp2002/Local-Ledger/internal/account"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/savingsgoal"
 )
 
 var fixedNow = time.Date(2026, 9, 1, 14, 30, 0, 0, time.UTC)

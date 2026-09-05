@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
 
 // Remove deletes one known-merchant default and returns its pre-delete

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/category"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
-	"github.com/jordanp2002/local-finance-mcp/internal/recurring"
+	"github.com/jordanp2002/Local-Ledger/internal/category"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/recurring"
 )
 
 func openRecurringStore(t *testing.T) (*recurring.Store, *category.Store, *sql.DB) {

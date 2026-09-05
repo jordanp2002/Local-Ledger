@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/recurring"
+	"github.com/jordanp2002/Local-Ledger/internal/recurring"
 )
 
 func TestPreviewDueEmptyDatabase(t *testing.T) {

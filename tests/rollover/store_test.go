@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/budget"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/recurring"
-	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
-	"github.com/jordanp2002/local-finance-mcp/internal/summary"
-	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/internal/budget"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/recurring"
+	"github.com/jordanp2002/Local-Ledger/internal/rollover"
+	"github.com/jordanp2002/Local-Ledger/internal/summary"
+	"github.com/jordanp2002/Local-Ledger/internal/transaction"
 )
 
 func TestCreateListSummaryAndCarryForwardKeepAdjustmentsSeparate(t *testing.T) {

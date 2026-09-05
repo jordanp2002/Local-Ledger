@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
-	"github.com/jordanp2002/local-finance-mcp/internal/server"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
