@@ -184,3 +184,19 @@ func TestBlockedDueTransactionJSONShape(t *testing.T) {
 		t.Fatalf("blocked due transaction JSON = %s, want %s", got, want)
 	}
 }
+
+func TestAccountTransferJSONShape(t *testing.T) {
+	got, err := json.Marshal(contract.AccountTransfer{
+		ID: 1, SourceAccountID: 2, SourceAccount: "Checking",
+		DestinationAccountID: 3, DestinationAccount: "Savings", Amount: "400.00",
+		Date: "2026-09-01", Note: nil, ReversalOfTransferID: nil,
+		Status: "recorded", CreatedAt: "2026-09-01T14:30:00.000Z", UpdatedAt: "2026-09-01T14:30:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("marshal account transfer: %v", err)
+	}
+	want := `{"id":1,"source_account_id":2,"source_account":"Checking","destination_account_id":3,"destination_account":"Savings","amount":"400.00","date":"2026-09-01","note":null,"reversal_of_transfer_id":null,"status":"recorded","created_at":"2026-09-01T14:30:00.000Z","updated_at":"2026-09-01T14:30:00.000Z"}`
+	if string(got) != want {
+		t.Fatalf("account transfer JSON = %s, want %s", got, want)
+	}
+}

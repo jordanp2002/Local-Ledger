@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/jordanp2002/local-finance-mcp/internal/database"
@@ -122,5 +123,42 @@ func TestMigrateAccountsUpgradePreservesRows(t *testing.T) {
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO account_entries (account_id, kind, delta_hundredths, date, idempotency_key, fingerprint) VALUES (?, 'deposit', 0, '2026-08-14', 'upgrade-zero', 'upgrade-zero-fp')`, accountID); err == nil {
 		t.Fatal("zero delta was not rejected")
+	}
+
+	throughTen := migrationSet(map[string]string{
+		"001_initial.sql":                 readRepoMigration(t, "001_initial.sql"),
+		"002_transaction_imports.sql":     readRepoMigration(t, "002_transaction_imports.sql"),
+		"003_transaction_idempotency.sql": readRepoMigration(t, "003_transaction_idempotency.sql"),
+		"004_recurring_transactions.sql":  readRepoMigration(t, "004_recurring_transactions.sql"),
+		"005_split_transactions.sql":      readRepoMigration(t, "005_split_transactions.sql"),
+		"006_budget_rollovers.sql":        readRepoMigration(t, "006_budget_rollovers.sql"),
+		"007_sinking_fund_periods.sql":    readRepoMigration(t, "007_sinking_fund_periods.sql"),
+		"008_accounts.sql":                readRepoMigration(t, "008_accounts.sql"),
+		"009_account_entries.sql":         readRepoMigration(t, "009_account_entries.sql"),
+		"010_account_transfers.sql":       readRepoMigration(t, "010_account_transfers.sql"),
+	})
+	if err := database.MigrateFS(ctx, db, throughTen); err != nil {
+		t.Fatalf("MigrateFS through 010 with existing reversal: %v", err)
+	}
+	if got := migrationVersion(t, db); got != 10 {
+		t.Fatalf("version after 010 = %d, want 10", got)
+	}
+	var reversalOf sql.NullInt64
+	if err := db.QueryRowContext(ctx, "SELECT reversal_of_entry_id FROM account_entries WHERE id = (SELECT id FROM account_entries WHERE idempotency_key = 'upgrade-rv')").Scan(&reversalOf); err != nil {
+		t.Fatalf("query preserved reversal link: %v", err)
+	}
+	if !reversalOf.Valid || reversalOf.Int64 != entryID {
+		t.Fatalf("preserved reversal link = %+v, want %d", reversalOf, entryID)
+	}
+	rows, err := db.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		t.Fatalf("foreign_key_check: %v", err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		t.Fatal("foreign_key_check reported a violation after account-entry rebuild")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("foreign_key_check rows: %v", err)
 	}
 }

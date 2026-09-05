@@ -67,6 +67,9 @@ type accountStore interface {
 	ReconcileBalance(ctx context.Context, in account.ReconcileInput) (account.ReconcileResult, []contract.FieldIssue, error)
 	ListActivity(ctx context.Context, in account.ListActivityInput) (account.ListActivityResult, []contract.FieldIssue, error)
 	ReverseActivity(ctx context.Context, in account.ReverseInput) (account.ReverseResult, []contract.FieldIssue, error)
+	TransferBetweenAccounts(ctx context.Context, in account.TransferInput) (account.TransferResult, []contract.FieldIssue, error)
+	ListTransfers(ctx context.Context, in account.ListTransfersInput) (account.ListTransfersResult, []contract.FieldIssue, error)
+	ReverseAccountTransfer(ctx context.Context, in account.ReverseTransferInput) (account.TransferResult, []contract.FieldIssue, error)
 }
 
 type accountTools struct {
@@ -102,6 +105,7 @@ func registerAccountTools(srv *mcp.Server, store accountStore, logger *log.Logge
 	}, tools.disableAccount)
 
 	registerAccountActivityTools(srv, store, tools.logger)
+	registerAccountTransferTools(srv, store, tools.logger)
 }
 
 func (t *accountTools) createAccount(ctx context.Context, req *mcp.CallToolRequest, in createAccountInput) (*mcp.CallToolResult, any, error) {
@@ -186,6 +190,9 @@ func (t *accountTools) disableAccount(ctx context.Context, _ *mcp.CallToolReques
 
 func (t *accountTools) mapAccountError(tool string, err error) (*mcp.CallToolResult, any, error) {
 	if code, message, details, ok := mapAccountActivityError(err); ok {
+		return toolError(contract.NewErrorEnvelope(contract.NewError(code, message, false, details)))
+	}
+	if code, message, details, ok := mapAccountTransferError(err); ok {
 		return toolError(contract.NewErrorEnvelope(contract.NewError(code, message, false, details)))
 	}
 	var exists *account.AlreadyExistsError
