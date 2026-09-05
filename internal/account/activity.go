@@ -129,6 +129,7 @@ type entryRow struct {
 	idempotencyKey string
 	fingerprint    string
 	reversalOf     sql.NullInt64
+	transferID     sql.NullInt64
 	createdAt      string
 }
 
@@ -235,6 +236,11 @@ func toEntryContract(row entryRow, balanceAfter int64) (contract.AccountEntry, e
 		v := row.reversalOf.Int64
 		reversal = &v
 	}
+	var transfer *int64
+	if row.transferID.Valid {
+		v := row.transferID.Int64
+		transfer = &v
+	}
 	return contract.AccountEntry{
 		ID:                row.id,
 		AccountID:         row.accountID,
@@ -245,7 +251,7 @@ func toEntryContract(row entryRow, balanceAfter int64) (contract.AccountEntry, e
 		Date:              row.date,
 		Note:              note,
 		ReversalOfEntryID: reversal,
-		TransferID:        nil,
+		TransferID:        transfer,
 		CreatedAt:         row.createdAt,
 		BalanceAfter:      balance,
 	}, nil
@@ -253,11 +259,11 @@ func toEntryContract(row entryRow, balanceAfter int64) (contract.AccountEntry, e
 
 func scanEntry(row interface{ Scan(dest ...any) error }) (entryRow, error) {
 	var e entryRow
-	err := row.Scan(&e.id, &e.accountID, &e.accountName, &e.kind, &e.delta, &e.date, &e.note, &e.idempotencyKey, &e.fingerprint, &e.reversalOf, &e.createdAt)
+	err := row.Scan(&e.id, &e.accountID, &e.accountName, &e.kind, &e.delta, &e.date, &e.note, &e.idempotencyKey, &e.fingerprint, &e.reversalOf, &e.transferID, &e.createdAt)
 	return e, err
 }
 
-const entryColumns = `e.id, e.account_id, a.name, e.kind, e.delta_hundredths, e.date, e.note, e.idempotency_key, e.fingerprint, e.reversal_of_entry_id, e.created_at`
+const entryColumns = `e.id, e.account_id, a.name, e.kind, e.delta_hundredths, e.date, e.note, e.idempotency_key, e.fingerprint, e.reversal_of_entry_id, e.transfer_id, e.created_at`
 
 func getEntryByID(ctx context.Context, tx *sql.Tx, id int64) (entryRow, error) {
 	return scanEntry(tx.QueryRowContext(ctx, `SELECT `+entryColumns+` FROM account_entries AS e INNER JOIN accounts AS a ON a.id = e.account_id WHERE e.id = ?`, id))
@@ -785,10 +791,10 @@ func (s *Store) ListActivity(ctx context.Context, in ListActivityInput) (ListAct
 	if in.Kind != nil {
 		k := strings.TrimSpace(*in.Kind)
 		switch k {
-		case "deposit", "withdrawal", "reconciliation", "reversal":
+		case "deposit", "withdrawal", "reconciliation", "reversal", "transfer_out", "transfer_in":
 			kind = &k
 		default:
-			fields = append(fields, contract.FieldIssue{Field: "kind", Reason: "must be one of deposit, withdrawal, reconciliation, reversal"})
+			fields = append(fields, contract.FieldIssue{Field: "kind", Reason: "must be one of deposit, withdrawal, reconciliation, reversal, transfer_out, transfer_in"})
 		}
 	}
 	limit := ActivityDefaultLimit

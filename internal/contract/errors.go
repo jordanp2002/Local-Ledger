@@ -35,6 +35,9 @@ const (
 	ErrorCodeAccountBalanceNotZero               ErrorCode = "account_balance_not_zero"
 	ErrorCodeAccountEntryNotFound                ErrorCode = "account_entry_not_found"
 	ErrorCodeAccountEntryNotReversible           ErrorCode = "account_entry_not_reversible"
+	ErrorCodeAccountTransferNotFound             ErrorCode = "account_transfer_not_found"
+	ErrorCodeAccountTransferAlreadyReversed      ErrorCode = "account_transfer_already_reversed"
+	ErrorCodeTransferDependencyConflict          ErrorCode = "transfer_dependency_conflict"
 	ErrorCodeInternalError                       ErrorCode = "internal_error"
 )
 
@@ -194,6 +197,12 @@ func defaultErrorMessage(code ErrorCode) string {
 		return "The requested account entry was not found."
 	case ErrorCodeAccountEntryNotReversible:
 		return "The requested account entry cannot be reversed."
+	case ErrorCodeAccountTransferNotFound:
+		return "The requested account transfer was not found."
+	case ErrorCodeAccountTransferAlreadyReversed:
+		return "The requested account transfer has already been reversed."
+	case ErrorCodeTransferDependencyConflict:
+		return "The account transfer has a dependent goal funding record and must be reversed through that goal."
 	case ErrorCodeInternalError:
 		return "The operation could not be completed."
 	default:

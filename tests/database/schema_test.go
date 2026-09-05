@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"account_entries", "account_reconcile_noops", "accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"account_entries", "account_reconcile_noops", "account_transfers", "accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -92,12 +92,30 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if countNonConstraintIndexes(indexes["transaction_idempotency"]) != 0 {
 		t.Fatalf("transaction_idempotency has a speculative non-constraint index: %v", indexes["transaction_idempotency"])
 	}
-	if countNonConstraintIndexes(indexes["account_entries"]) != 2 {
-		t.Fatalf("account_entries non-constraint index count = %d, want 2", countNonConstraintIndexes(indexes["account_entries"]))
+	if countNonConstraintIndexes(indexes["account_entries"]) != 3 {
+		t.Fatalf("account_entries non-constraint index count = %d, want 3", countNonConstraintIndexes(indexes["account_entries"]))
 	}
 	if !hasIndexSignature(indexes["account_entries"], schemaIndexColumn{name: "account_id"}, schemaIndexColumn{name: "date"}, schemaIndexColumn{name: "created_at"}, schemaIndexColumn{name: "id"}) ||
-		!hasIndexSignature(indexes["account_entries"], schemaIndexColumn{name: "account_id"}) {
-		t.Fatalf("account_entries indexes = %v, want account/date/created/id and account", indexes["account_entries"])
+		!hasIndexSignature(indexes["account_entries"], schemaIndexColumn{name: "account_id"}) ||
+		!hasIndexSignature(indexes["account_entries"], schemaIndexColumn{name: "transfer_id"}) {
+		t.Fatalf("account_entries indexes = %v, want account/date/created/id, account, and transfer", indexes["account_entries"])
+	}
+	hasTransferEntryUniqueness := false
+	for _, index := range indexes["account_entries"] {
+		if index.unique && index.partial && len(index.columns) == 2 && index.columns[0].name == "transfer_id" && index.columns[1].name == "kind" {
+			hasTransferEntryUniqueness = true
+		}
+	}
+	if !hasTransferEntryUniqueness {
+		t.Fatalf("account_entries is missing its partial unique transfer/kind constraint: %v", indexes["account_entries"])
+	}
+	if countNonConstraintIndexes(indexes["account_transfers"]) != 3 {
+		t.Fatalf("account_transfers non-constraint index count = %d, want 3", countNonConstraintIndexes(indexes["account_transfers"]))
+	}
+	if !hasIndexSignature(indexes["account_transfers"], schemaIndexColumn{name: "date", descending: true}, schemaIndexColumn{name: "created_at", descending: true}, schemaIndexColumn{name: "id", descending: true}) ||
+		!hasIndexSignature(indexes["account_transfers"], schemaIndexColumn{name: "source_account_id"}) ||
+		!hasIndexSignature(indexes["account_transfers"], schemaIndexColumn{name: "destination_account_id"}) {
+		t.Fatalf("account_transfers indexes = %v, want date/created/id, source, and destination", indexes["account_transfers"])
 	}
 	if countNonConstraintIndexes(indexes["account_reconcile_noops"]) != 0 {
 		t.Fatalf("account_reconcile_noops has a speculative non-constraint index: %v", indexes["account_reconcile_noops"])
@@ -176,6 +194,10 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		}
 		if table == "account_entries" {
 			assertAccountEntryForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "account_transfers" {
+			assertAccountTransferForeignKeys(t, foreignKeys)
 			continue
 		}
 		if table == "account_reconcile_noops" {
@@ -377,8 +399,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 9 {
-		t.Fatalf("reopened user_version = %d, want 9", version)
+	if version != 10 {
+		t.Fatalf("reopened user_version = %d, want 10", version)
 	}
 
 	var categoryName string
@@ -677,8 +699,8 @@ func assertAllocationForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
 
 func assertAccountEntryForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
 	t.Helper()
-	if len(foreignKeys) != 2 {
-		t.Fatalf("account_entries foreign keys = %v, want 2", foreignKeys)
+	if len(foreignKeys) != 3 {
+		t.Fatalf("account_entries foreign keys = %v, want 3", foreignKeys)
 	}
 	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
 	for _, foreignKey := range foreignKeys {
@@ -697,6 +719,40 @@ func assertAccountEntryForeignKeys(t *testing.T, foreignKeys []schemaForeignKey)
 	}
 	if reversalFK.onDelete != "RESTRICT" && reversalFK.onDelete != "NO ACTION" {
 		t.Fatalf("reversal_of_entry_id delete action = %q, want RESTRICT or NO ACTION", reversalFK.onDelete)
+	}
+	transferFK, ok := byFrom["transfer_id"]
+	if !ok || transferFK.table != "account_transfers" || transferFK.to != "id" {
+		t.Fatalf("transfer_id foreign key = %v, want account_transfers(id)", transferFK)
+	}
+	if transferFK.onDelete != "RESTRICT" && transferFK.onDelete != "NO ACTION" {
+		t.Fatalf("transfer_id delete action = %q, want RESTRICT or NO ACTION", transferFK.onDelete)
+	}
+}
+
+func assertAccountTransferForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 3 {
+		t.Fatalf("account_transfers foreign keys = %v, want 3", foreignKeys)
+	}
+	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
+	for _, foreignKey := range foreignKeys {
+		byFrom[foreignKey.from] = foreignKey
+	}
+	for _, field := range []string{"source_account_id", "destination_account_id", "reversal_of_transfer_id"} {
+		foreignKey, ok := byFrom[field]
+		if !ok {
+			t.Fatalf("account_transfers missing %s foreign key: %v", field, foreignKeys)
+		}
+		wantTable := "accounts"
+		if field == "reversal_of_transfer_id" {
+			wantTable = "account_transfers"
+		}
+		if foreignKey.table != wantTable || foreignKey.to != "id" {
+			t.Fatalf("%s foreign key = %v, want %s(id)", field, foreignKey, wantTable)
+		}
+		if foreignKey.onDelete != "RESTRICT" && foreignKey.onDelete != "NO ACTION" {
+			t.Fatalf("%s delete action = %q, want RESTRICT or NO ACTION", field, foreignKey.onDelete)
+		}
 	}
 }
 

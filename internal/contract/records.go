@@ -113,6 +113,21 @@ type AccountEntry struct {
 	BalanceAfter      string  `json:"balance_after"`
 }
 
+type AccountTransfer struct {
+	ID                   int64   `json:"id"`
+	SourceAccountID      int64   `json:"source_account_id"`
+	SourceAccount        string  `json:"source_account"`
+	DestinationAccountID int64   `json:"destination_account_id"`
+	DestinationAccount   string  `json:"destination_account"`
+	Amount               string  `json:"amount"`
+	Date                 string  `json:"date"`
+	Note                 *string `json:"note"`
+	ReversalOfTransferID *int64  `json:"reversal_of_transfer_id"`
+	Status               string  `json:"status"`
+	CreatedAt            string  `json:"created_at"`
+	UpdatedAt            string  `json:"updated_at"`
+}
+
 type Page struct {
 	Limit    int64 `json:"limit"`
 	Offset   int64 `json:"offset"`

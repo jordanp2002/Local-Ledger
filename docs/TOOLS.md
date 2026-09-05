@@ -23,11 +23,17 @@ Asset accounts are local records only. These tools never contact a bank.
 | `reconcile_account_balance` | Reconcile an account to a reported balance with an auditable delta. |
 | `list_account_activity` | List activity with running balances in stable order. |
 | `reverse_account_activity` | Reverse one activity entry with an offsetting entry. |
+| `transfer_between_accounts` | Record both sides of a completed local transfer atomically. |
+| `list_account_transfers` | List completed local transfers and both account identities. |
+| `reverse_account_transfer` | Record an inverse local transfer without deleting the original. |
 
 Activity write responses return the resulting balance at the original write,
 including on an exact retry. `list_account_activity` calculates running balances
 in date, creation timestamp, and ID order, so later backdated activity can change
 the historical running balances without changing an earlier write's retry result.
+Transfers are local records only: these tools never contact a bank or execute an
+external transfer. A transfer changes only the two account balances; it does not
+create income, spending, budget, or expense-transaction records.
 
 ## 3. Set up a monthly budget
 
