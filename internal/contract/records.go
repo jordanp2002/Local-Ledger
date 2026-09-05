@@ -281,3 +281,23 @@ type BlockedDueTransaction struct {
 	DueDate                string `json:"due_date"`
 	Reason                 string `json:"reason"`
 }
+
+type SavingsGoal struct {
+	ID                int64   `json:"id"`
+	Name              string  `json:"name"`
+	AccountID         int64   `json:"account_id"`
+	Account           string  `json:"account"`
+	TargetAmount      string  `json:"target_amount"`
+	TargetDate        *string `json:"target_date"`
+	CurrentAmount     string  `json:"current_amount"`
+	RemainingAmount   string  `json:"remaining_amount"`
+	AmountAboveTarget *string `json:"amount_above_target,omitempty"`
+	ProgressPercent   string  `json:"progress_percent"`
+	TargetReached     bool    `json:"target_reached"`
+	Status            string  `json:"status"`
+	Note              *string `json:"note"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
+	CompletedAt       *string `json:"completed_at"`
+	CancelledAt       *string `json:"cancelled_at"`
+}

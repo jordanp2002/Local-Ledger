@@ -22,7 +22,7 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query schema tables: %v", err)
 	}
-	wantTables := []string{"account_entries", "account_reconcile_noops", "account_transfers", "accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
+	wantTables := []string{"account_entries", "account_reconcile_noops", "account_transfers", "accounts", "budget_rollovers", "budgets", "categories", "known_merchants", "recurring_transaction_runs", "recurring_transactions", "savings_goal_entries", "savings_goals", "sinking_fund_periods", "transaction_allocations", "transaction_idempotency", "transaction_import_items", "transaction_imports", "transactions"}
 	if strings.Join(tables, ",") != strings.Join(wantTables, ",") {
 		t.Fatalf("schema tables = %v, want exactly %v", tables, wantTables)
 	}
@@ -120,6 +120,16 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 	if countNonConstraintIndexes(indexes["account_reconcile_noops"]) != 0 {
 		t.Fatalf("account_reconcile_noops has a speculative non-constraint index: %v", indexes["account_reconcile_noops"])
 	}
+	if countNonConstraintIndexes(indexes["savings_goals"]) != 1 ||
+		!hasIndexSignature(indexes["savings_goals"], schemaIndexColumn{name: "account_id"}) {
+		t.Fatalf("savings_goals indexes = %v, want account_id", indexes["savings_goals"])
+	}
+	if countNonConstraintIndexes(indexes["savings_goal_entries"]) != 3 ||
+		!hasIndexSignature(indexes["savings_goal_entries"], schemaIndexColumn{name: "goal_id"}) ||
+		!hasIndexSignature(indexes["savings_goal_entries"], schemaIndexColumn{name: "account_id"}) ||
+		!hasIndexSignature(indexes["savings_goal_entries"], schemaIndexColumn{name: "transfer_id"}) {
+		t.Fatalf("savings_goal_entries indexes = %v, want goal_id, account_id, transfer_id", indexes["savings_goal_entries"])
+	}
 	if countNonConstraintIndexes(indexes["budget_rollovers"]) != 2 {
 		t.Fatalf("budget_rollovers non-constraint index count = %d, want 2", countNonConstraintIndexes(indexes["budget_rollovers"]))
 	}
@@ -159,6 +169,8 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		"known_merchants":            true,
 		"recurring_transactions":     true,
 		"recurring_transaction_runs": true,
+		"savings_goals":              true,
+		"savings_goal_entries":       true,
 		"sinking_fund_periods":       true,
 		"transaction_allocations":    true,
 		"transaction_imports":        false,
@@ -202,6 +214,14 @@ func TestSchemaTablesIndexesAndForeignKeys(t *testing.T) {
 		}
 		if table == "account_reconcile_noops" {
 			assertAccountNoopForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "savings_goals" {
+			assertSavingsGoalForeignKeys(t, foreignKeys)
+			continue
+		}
+		if table == "savings_goal_entries" {
+			assertSavingsGoalEntryForeignKeys(t, foreignKeys)
 			continue
 		}
 		if !wantForeignKeys[table] {
@@ -399,8 +419,8 @@ func TestSchemaReopenPreservesRowsAndMigrationVersion(t *testing.T) {
 	if err := reopened.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("query reopened user_version: %v", err)
 	}
-	if version != 10 {
-		t.Fatalf("reopened user_version = %d, want 10", version)
+	if version != 11 {
+		t.Fatalf("reopened user_version = %d, want 11", version)
 	}
 
 	var categoryName string
@@ -767,6 +787,46 @@ func assertAccountNoopForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) 
 	}
 	if foreignKey.onDelete != "RESTRICT" && foreignKey.onDelete != "NO ACTION" {
 		t.Fatalf("account_reconcile_noops delete action = %q, want RESTRICT or NO ACTION", foreignKey.onDelete)
+	}
+}
+
+func assertSavingsGoalForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 1 {
+		t.Fatalf("savings_goals foreign keys = %v, want 1", foreignKeys)
+	}
+	fk := foreignKeys[0]
+	if fk.table != "accounts" || fk.from != "account_id" || fk.to != "id" {
+		t.Fatalf("savings_goals foreign key = %v, want account_id -> accounts(id)", fk)
+	}
+	if fk.onDelete != "RESTRICT" && fk.onDelete != "NO ACTION" {
+		t.Fatalf("savings_goals delete action = %q, want RESTRICT or NO ACTION", fk.onDelete)
+	}
+}
+
+func assertSavingsGoalEntryForeignKeys(t *testing.T, foreignKeys []schemaForeignKey) {
+	t.Helper()
+	if len(foreignKeys) != 4 {
+		t.Fatalf("savings_goal_entries foreign keys = %v, want 4", foreignKeys)
+	}
+	byFrom := make(map[string]schemaForeignKey, len(foreignKeys))
+	for _, fk := range foreignKeys {
+		byFrom[fk.from] = fk
+	}
+	expected := map[string]string{
+		"goal_id":              "savings_goals",
+		"account_id":           "accounts",
+		"transfer_id":          "account_transfers",
+		"reversal_of_entry_id": "savings_goal_entries",
+	}
+	for field, wantTable := range expected {
+		fk, ok := byFrom[field]
+		if !ok || fk.table != wantTable || fk.to != "id" {
+			t.Fatalf("savings_goal_entries %s foreign key = %v, want %s(id)", field, fk, wantTable)
+		}
+		if fk.onDelete != "RESTRICT" && fk.onDelete != "NO ACTION" {
+			t.Fatalf("savings_goal_entries %s delete action = %q, want RESTRICT or NO ACTION", field, fk.onDelete)
+		}
 	}
 }
 
