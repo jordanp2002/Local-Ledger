@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
-	"github.com/jordanp2002/local-finance-mcp/internal/server"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var categoryToolNames = []string{"add_split_transaction", "add_transaction", "add_transactions", "compare_months", "create_account", "create_budget_rollover", "create_category", "create_monthly_budget", "create_recurring_transaction", "create_savings_goal", "disable_account", "disable_category", "disable_recurring_transaction", "disable_sinking_fund", "enable_recurring_transaction", "enable_sinking_fund", "get_category_summary", "get_monthly_series", "get_monthly_summary", "get_spending_summary", "list_account_activity", "list_account_transfers", "list_accounts", "list_budget_rollovers", "list_categories", "list_known_merchants", "list_recurring_transactions", "list_savings_goals", "list_sinking_funds", "list_top_merchants", "list_transactions", "materialize_due_transactions", "preview_due_transactions", "preview_upcoming_transactions", "reconcile_account_balance", "record_account_activity", "remove_budget_rollover", "remove_known_merchant", "remove_transaction", "rename_category", "rename_known_merchant", "reverse_account_activity", "reverse_account_transfer", "set_budgets", "set_known_merchant", "transfer_between_accounts", "update_account", "update_recurring_transaction", "update_savings_goal", "update_transaction"}
+var categoryToolNames = []string{"add_split_transaction", "add_transaction", "add_transactions", "allocate_to_savings_goal", "cancel_savings_goal", "compare_months", "complete_savings_goal", "create_account", "create_budget_rollover", "create_category", "create_monthly_budget", "create_recurring_transaction", "create_savings_goal", "disable_account", "disable_category", "disable_recurring_transaction", "disable_sinking_fund", "enable_recurring_transaction", "enable_sinking_fund", "fund_savings_goal", "get_category_summary", "get_monthly_series", "get_monthly_summary", "get_savings_overview", "get_spending_summary", "list_account_activity", "list_account_transfers", "list_accounts", "list_budget_rollovers", "list_categories", "list_known_merchants", "list_recurring_transactions", "list_savings_goals", "list_sinking_funds", "list_top_merchants", "list_transactions", "materialize_due_transactions", "preview_due_transactions", "preview_upcoming_transactions", "reconcile_account_balance", "record_account_activity", "release_savings_goal_funds", "remove_budget_rollover", "remove_known_merchant", "remove_transaction", "rename_category", "rename_known_merchant", "reverse_account_activity", "reverse_account_transfer", "reverse_savings_goal_funding", "set_budgets", "set_known_merchant", "transfer_between_accounts", "update_account", "update_recurring_transaction", "update_savings_goal", "update_transaction"}
 
 func TestCategoryToolDiscovery(t *testing.T) {
 	session := connectCategorySession(t, openCategoryDB(t), time.Now, nil)

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
 )
 
 func TestMigrateNewDatabaseAppliesEmbeddedMigration(t *testing.T) {

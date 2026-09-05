@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/config"
+	"github.com/jordanp2002/Local-Ledger/internal/config"
 )
 
 func TestDatabasePathUsesDefaultWhenEnvironmentIsUnset(t *testing.T) {

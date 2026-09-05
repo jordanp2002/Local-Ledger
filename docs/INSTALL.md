@@ -5,16 +5,16 @@
 Requires Git and Go 1.26 or newer.
 
 ```sh
-git clone https://github.com/jordanp2002/local-finance-mcp.git
-cd local-finance-mcp
+git clone https://github.com/jordanp2002/Local-Ledger.git
+cd Local-Ledger
 mkdir -p "$HOME/LocalLedger/bin"
-go build -o "$HOME/LocalLedger/bin/local-finance-mcp" ./cmd/local-ledger
+go build -o "$HOME/LocalLedger/bin/local-ledger" ./cmd/local-ledger
 ```
 
 Run it once:
 
 ```sh
-~/LocalLedger/bin/local-finance-mcp
+~/LocalLedger/bin/local-ledger
 ```
 
 The database is created automatically at `~/LocalLedger/finance.db`.
@@ -25,7 +25,7 @@ Use this command in your MCP client configuration:
 
 ```json
 {
-  "command": "/Users/you/LocalLedger/bin/local-finance-mcp"
+  "command": "/Users/you/LocalLedger/bin/local-ledger"
 }
 ```
 
@@ -37,9 +37,9 @@ Set an absolute path in the MCP client environment:
 
 ```json
 {
-  "command": "/Users/you/LocalLedger/bin/local-finance-mcp",
+  "command": "/Users/you/LocalLedger/bin/local-ledger",
   "env": {
-    "LOCAL_FINANCE_DB_PATH": "/absolute/path/finance.db"
+    "LOCAL_LEDGER_DB_PATH": "/absolute/path/finance.db"
   }
 }
 ```
@@ -50,7 +50,7 @@ From the cloned repository:
 
 ```sh
 git pull --ff-only
-go build -o "$HOME/LocalLedger/bin/local-finance-mcp" ./cmd/local-ledger
+go build -o "$HOME/LocalLedger/bin/local-ledger" ./cmd/local-ledger
 ```
 
 Restart the MCP client after rebuilding. Database updates run automatically.

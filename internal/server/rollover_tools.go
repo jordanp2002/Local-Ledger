@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
-	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/rollover"
+	"github.com/jordanp2002/Local-Ledger/internal/sinkingfund"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

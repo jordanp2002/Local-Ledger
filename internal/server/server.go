@@ -9,17 +9,17 @@ import (
 	"os"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/account"
-	"github.com/jordanp2002/local-finance-mcp/internal/budget"
-	"github.com/jordanp2002/local-finance-mcp/internal/category"
-	"github.com/jordanp2002/local-finance-mcp/internal/database"
-	"github.com/jordanp2002/local-finance-mcp/internal/merchant"
-	"github.com/jordanp2002/local-finance-mcp/internal/recurring"
-	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
-	"github.com/jordanp2002/local-finance-mcp/internal/savingsgoal"
-	"github.com/jordanp2002/local-finance-mcp/internal/sinkingfund"
-	"github.com/jordanp2002/local-finance-mcp/internal/summary"
-	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/internal/account"
+	"github.com/jordanp2002/Local-Ledger/internal/budget"
+	"github.com/jordanp2002/Local-Ledger/internal/category"
+	"github.com/jordanp2002/Local-Ledger/internal/database"
+	"github.com/jordanp2002/Local-Ledger/internal/merchant"
+	"github.com/jordanp2002/Local-Ledger/internal/recurring"
+	"github.com/jordanp2002/Local-Ledger/internal/rollover"
+	"github.com/jordanp2002/Local-Ledger/internal/savingsgoal"
+	"github.com/jordanp2002/Local-Ledger/internal/sinkingfund"
+	"github.com/jordanp2002/Local-Ledger/internal/summary"
+	"github.com/jordanp2002/Local-Ledger/internal/transaction"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -31,14 +31,14 @@ type Config struct {
 
 func New(db *sql.DB, now func() time.Time, logger *log.Logger) *mcp.Server {
 	if logger == nil {
-		logger = log.New(os.Stderr, "local-finance-mcp: ", 0)
+		logger = log.New(os.Stderr, "local-ledger: ", 0)
 	}
 	if now == nil {
 		now = time.Now
 	}
 
 	srv := mcp.NewServer(&mcp.Implementation{
-		Name:    "local-finance-mcp",
+		Name:    "local-ledger",
 		Version: version,
 	}, nil)
 	categoryStore := &category.Store{DB: db, Now: now}
@@ -61,7 +61,7 @@ func Run(ctx context.Context, config Config) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 
-	logger := log.New(os.Stderr, "local-finance-mcp: ", 0)
+	logger := log.New(os.Stderr, "local-ledger: ", 0)
 	runErr := New(db, time.Now, logger).Run(ctx, &mcp.StdioTransport{})
 	closeErr := db.Close()
 	return joinRunAndCloseErrors(runErr, closeErr)

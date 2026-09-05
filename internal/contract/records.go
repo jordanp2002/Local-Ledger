@@ -301,3 +301,29 @@ type SavingsGoal struct {
 	CompletedAt       *string `json:"completed_at"`
 	CancelledAt       *string `json:"cancelled_at"`
 }
+
+type SavingsAccountAllocation struct {
+	AccountID           int64  `json:"account_id"`
+	Account             string `json:"account"`
+	Balance             string `json:"balance"`
+	Allocated           string `json:"allocated"`
+	Unallocated         string `json:"unallocated"`
+	AllocationShortfall string `json:"allocation_shortfall"`
+}
+
+type SavingsOverviewCounts struct {
+	Active    int `json:"active"`
+	Reached   int `json:"reached"`
+	Completed int `json:"completed"`
+	Cancelled int `json:"cancelled"`
+}
+
+type SavingsOverview struct {
+	TotalBalance             string                     `json:"total_balance"`
+	TotalAllocated           string                     `json:"total_allocated"`
+	TotalUnallocated         string                     `json:"total_unallocated"`
+	TotalAllocationShortfall string                     `json:"total_allocation_shortfall"`
+	Accounts                 []SavingsAccountAllocation `json:"accounts"`
+	Goals                    []SavingsGoal              `json:"goals"`
+	Counts                   SavingsOverviewCounts      `json:"counts"`
+}

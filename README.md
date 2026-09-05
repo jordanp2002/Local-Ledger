@@ -36,7 +36,7 @@ The database is created at:
 To use a different location:
 
 ```sh
-LOCAL_FINANCE_DB_PATH=/absolute/path/finance.db go run ./cmd/local-ledger
+LOCAL_LEDGER_DB_PATH=/absolute/path/finance.db go run ./cmd/local-ledger
 ```
 
 ## Documentation

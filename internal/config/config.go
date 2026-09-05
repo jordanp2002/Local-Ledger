@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const DatabasePathEnv = "LOCAL_FINANCE_DB_PATH"
+const DatabasePathEnv = "LOCAL_LEDGER_DB_PATH"
 
 // DatabasePath returns the configured ledger path or the default path in the
 // user's LocalLedger directory.

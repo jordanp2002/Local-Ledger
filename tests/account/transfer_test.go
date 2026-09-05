@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/account"
+	"github.com/jordanp2002/Local-Ledger/internal/account"
 )
 
 func TestTransferRecordsBothSidesAndPreservesReplayBalances(t *testing.T) {

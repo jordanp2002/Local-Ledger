@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/category"
+	"github.com/jordanp2002/Local-Ledger/internal/category"
 )
 
 func TestLocalMonthTorontoVsUTCSameInstant(t *testing.T) {

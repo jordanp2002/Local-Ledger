@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
-	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/rollover"
+	"github.com/jordanp2002/Local-Ledger/internal/transaction"
 )
 
 func (s *Store) MaterializeDue(ctx context.Context) (MaterializeDueResult, error) {

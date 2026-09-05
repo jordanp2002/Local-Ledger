@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
 
 var (
@@ -752,6 +752,14 @@ func (s *Store) ReverseAccountTransfer(ctx context.Context, in ReverseTransferIn
 		return TransferResult{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var dependency int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM savings_goal_entries WHERE transfer_id = ? LIMIT 1`, validated.TransferID).Scan(&dependency)
+	if err == nil {
+		return TransferResult{}, nil, &TransferDependencyConflictError{ID: validated.TransferID}
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return TransferResult{}, nil, err
+	}
 	result, err := ReverseTransferInTx(ctx, tx, validated)
 	if err != nil && isUniqueViolation(err, "account_transfers") {
 		_ = tx.Rollback()

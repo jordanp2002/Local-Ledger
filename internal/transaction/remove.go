@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/rollover"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/rollover"
 )
 
 func (s *Store) Remove(ctx context.Context, id int64) (contract.Transaction, []contract.FieldIssue, error) {

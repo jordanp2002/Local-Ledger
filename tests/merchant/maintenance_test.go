@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
-	"github.com/jordanp2002/local-finance-mcp/internal/merchant"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/merchant"
 )
 
 func TestRenamePreservesMappingIdentityAndTransactionText(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/summary"
+	"github.com/jordanp2002/Local-Ledger/internal/summary"
 )
 
 func TestSpentOfBudgetFormula(t *testing.T) {

@@ -3,7 +3,7 @@ package summary
 import (
 	"context"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
 
 func (s *Store) category(ctx context.Context, categoryName, month string) (contract.CategorySummary, []contract.FieldIssue, error) {

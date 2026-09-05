@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/config"
-	"github.com/jordanp2002/local-finance-mcp/internal/server"
+	"github.com/jordanp2002/Local-Ledger/internal/config"
+	"github.com/jordanp2002/Local-Ledger/internal/server"
 )
 
 func run(ctx context.Context) error {
@@ -24,6 +24,6 @@ func main() {
 	defer stop()
 
 	if err := run(ctx); config.ShouldReportError(err) {
-		log.New(os.Stderr, "local-finance-mcp: ", 0).Fatal(err)
+		log.New(os.Stderr, "local-ledger: ", 0).Fatal(err)
 	}
 }

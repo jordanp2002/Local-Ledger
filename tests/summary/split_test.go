@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/summary"
-	"github.com/jordanp2002/local-finance-mcp/internal/transaction"
+	"github.com/jordanp2002/Local-Ledger/internal/summary"
+	"github.com/jordanp2002/Local-Ledger/internal/transaction"
 )
 
 func TestSummariesCountSplitParentsAndSumAllocations(t *testing.T) {

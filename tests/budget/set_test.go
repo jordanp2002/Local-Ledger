@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordanp2002/local-finance-mcp/internal/budget"
-	"github.com/jordanp2002/local-finance-mcp/internal/contract"
+	"github.com/jordanp2002/Local-Ledger/internal/budget"
+	"github.com/jordanp2002/Local-Ledger/internal/contract"
 )
 
 const frozenSetTimestamp = "2020-01-01T00:00:00.000Z"
